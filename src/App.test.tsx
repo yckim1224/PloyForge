@@ -1,15 +1,15 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
-import { cleanup } from '@testing-library/react'
 import App from './App'
 
 afterEach(cleanup)
 
-test('renders the app bar and both panes', () => {
+test('renders the app bar and the control panel', () => {
   render(<App />)
   expect(screen.getByText('poly-forge')).toBeTruthy()
-  expect(screen.getByText('Render panel (canvas)')).toBeTruthy()
-  expect(screen.getByText('Control panel')).toBeTruthy()
-  // The resizable divider is present.
-  expect(screen.getByRole('separator')).toBeTruthy()
+  // Control panel content (the canvas Stage is not mounted in jsdom).
+  expect(screen.getByText('Statistics')).toBeTruthy()
+  expect(screen.getByText('Points')).toBeTruthy()
+  expect(screen.getByLabelText('Sample file')).toBeTruthy()
+  expect(screen.getByRole('button', { name: /Load sample/ })).toBeTruthy()
 })

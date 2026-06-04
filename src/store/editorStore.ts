@@ -32,6 +32,11 @@ export interface EditorState {
   regions: Region[]
   materials: Material[]
   selection: Selection
+  /** Bumped to ask the canvas to fit the view to the domain. */
+  fitNonce: number
+
+  // View
+  requestFit: () => void
 
   // Geometry mutations
   addPoint: (x: number, z: number) => string
@@ -85,6 +90,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   regions: [],
   materials: [],
   selection: emptySelection(),
+  fitNonce: 0,
+
+  requestFit: () => set((s) => ({ fitNonce: s.fitNonce + 1 })),
 
   addPoint: (x, z) => {
     const existing = findPointByCoord(get().points, x, z)
@@ -216,14 +224,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   clearSelection: () => set({ selection: emptySelection() }),
 
   loadDocument: (doc) =>
-    set({
+    set((s) => ({
       domain: doc.domain,
       points: doc.points,
       segments: doc.segments,
       regions: doc.regions,
       materials: doc.materials,
       selection: emptySelection(),
-    }),
+      fitNonce: s.fitNonce + 1,
+    })),
 
   toDocument: () => {
     const s = get()
