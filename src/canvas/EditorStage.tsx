@@ -4,6 +4,7 @@ import type Konva from 'konva'
 import { useEditorStore } from '../store/editorStore'
 import { materialColor } from '../constants/materials'
 import { boundaryColor, boundaryDash } from '../poly/boundary'
+import { pointInPolygon, type Vec2 } from '../lib/geometry'
 import { Toolbar } from '../components/Toolbar'
 import { computeGridLines } from './grid'
 import {
@@ -15,6 +16,13 @@ import {
   type Viewport,
 } from './viewport'
 import { nearestPoint, snapWorld } from './snapping'
+import {
+  facesInRect,
+  normalizeRect,
+  pointsInRect,
+  segmentsInRect,
+  type ScreenRect,
+} from './selection'
 
 const POINT_RADIUS = 4
 const SEGMENT_WIDTH = 2
@@ -34,28 +42,35 @@ export function EditorStage() {
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [vp, setVp] = useState<Viewport>({ scale: 1, originX: 0, originY: 0 })
   const [hover, setHover] = useState<Hover | null>(null)
+  const [marquee, setMarquee] = useState<ScreenRect | null>(null)
   const didInit = useRef(false)
   const sizeRef = useRef({ w: 0, h: 0 })
   const panning = useRef<{ x: number; y: number } | null>(null)
+  const marqueeStart = useRef<{ x: number; y: number; target: 'point' | 'segment' | 'face' } | null>(
+    null,
+  )
+  const justMarqueed = useRef(false)
 
   const domain = useEditorStore((s) => s.domain)
   const points = useEditorStore((s) => s.points)
   const segments = useEditorStore((s) => s.segments)
   const regions = useEditorStore((s) => s.regions)
+  const faces = useEditorStore((s) => s.faces)
   const materials = useEditorStore((s) => s.materials)
   const selection = useEditorStore((s) => s.selection)
   const tool = useEditorStore((s) => s.tool)
+  const marqueeTarget = useEditorStore((s) => s.marqueeTarget)
   const pendingLineStart = useEditorStore((s) => s.pendingLineStart)
 
   const addPoint = useEditorStore((s) => s.addPoint)
   const addSegment = useEditorStore((s) => s.addSegment)
   const selectSingle = useEditorStore((s) => s.selectSingle)
+  const selectMany = useEditorStore((s) => s.selectMany)
   const clearSelection = useEditorStore((s) => s.clearSelection)
   const setTool = useEditorStore((s) => s.setTool)
   const setPendingLineStart = useEditorStore((s) => s.setPendingLineStart)
   const deleteSelection = useEditorStore((s) => s.deleteSelection)
 
-  // Measure container; perform the initial fit inside the observer callback.
   useEffect(() => {
     const el = containerRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
@@ -74,7 +89,6 @@ export function EditorStage() {
     return () => ro.disconnect()
   }, [])
 
-  // Refit on request (Load sample, Fit button).
   useEffect(() => {
     return useEditorStore.subscribe((state, prev) => {
       if (state.fitNonce === prev.fitNonce) return
@@ -83,7 +97,6 @@ export function EditorStage() {
     })
   }, [])
 
-  // Keyboard shortcuts (ignored while typing in form controls).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
@@ -121,14 +134,7 @@ export function EditorStage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [deleteSelection, clearSelection, setTool, setPendingLineStart])
 
-  /** Resolve the point under the cursor (existing) or create a snapped new one. */
-  const resolveEndpointId = (px: number, py: number): string => {
-    const existing = nearestPoint(points, vp, px, py, HIT_PX)
-    if (existing) return existing.id
-    const w = screenToWorld(vp, px, py)
-    const sn = snapWorld(w.x, w.z, domain.gridSpacing)
-    return addPoint(sn.x, sn.z)
-  }
+  const byId = new Map(points.map((p) => [p.id, p]))
 
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault()
@@ -139,9 +145,22 @@ export function EditorStage() {
   }
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    const p = e.target.getStage()?.getPointerPosition()
+    const stage = e.target.getStage()
+    const p = stage?.getPointerPosition()
     if (!p) return
-    if (tool === 'pan' || e.evt.button === 1) panning.current = { x: p.x, y: p.y }
+    if (tool === 'pan' || e.evt.button === 1) {
+      panning.current = { x: p.x, y: p.y }
+      return
+    }
+    if (tool === 'select' && e.evt.button === 0) {
+      const target = e.evt.shiftKey
+        ? 'segment'
+        : e.evt.ctrlKey || e.evt.metaKey
+          ? 'face'
+          : marqueeTarget
+      marqueeStart.current = { x: p.x, y: p.y, target }
+      setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y })
+    }
   }
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -152,6 +171,10 @@ export function EditorStage() {
       const dy = p.y - panning.current.y
       panning.current = { x: p.x, y: p.y }
       setVp((v) => panBy(v, dx, dy))
+      return
+    }
+    if (marqueeStart.current) {
+      setMarquee(normalizeRect(marqueeStart.current.x, marqueeStart.current.y, p.x, p.y))
       return
     }
     if (tool === 'point' || tool === 'line') {
@@ -170,12 +193,38 @@ export function EditorStage() {
     }
   }
 
-  const endPan = () => {
+  const finishMarquee = (e: Konva.KonvaEventObject<MouseEvent>) => {
     panning.current = null
+    const ms = marqueeStart.current
+    if (!ms) return
+    const p = e.target.getStage()?.getPointerPosition() ?? { x: ms.x, y: ms.y }
+    const rect = normalizeRect(ms.x, ms.y, p.x, p.y)
+    const moved = Math.abs(p.x - ms.x) > 3 || Math.abs(p.y - ms.y) > 3
+    if (moved) {
+      if (ms.target === 'point') selectMany('point', pointsInRect(points, vp, rect))
+      else if (ms.target === 'segment')
+        selectMany('segment', segmentsInRect(points, segments, vp, rect))
+      else selectMany('face', facesInRect(faces, vp, rect))
+      justMarqueed.current = true
+    }
+    marqueeStart.current = null
+    setMarquee(null)
+  }
+
+  const resolveEndpointId = (px: number, py: number): string => {
+    const existing = nearestPoint(points, vp, px, py, HIT_PX)
+    if (existing) return existing.id
+    const w = screenToWorld(vp, px, py)
+    const sn = snapWorld(w.x, w.z, domain.gridSpacing)
+    return addPoint(sn.x, sn.z)
   }
 
   const handleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (e.evt.button === 1) return // middle button is reserved for panning
+    if (e.evt.button === 1) return
+    if (justMarqueed.current) {
+      justMarqueed.current = false
+      return
+    }
     const stage = e.target.getStage()
     const p = stage?.getPointerPosition()
     if (!p) return
@@ -187,14 +236,14 @@ export function EditorStage() {
       if (name === 'point') selectSingle('point', id)
       else if (name === 'segment') selectSingle('segment', id)
       else if (name === 'region') selectSingle('region', id)
+      else if (name === 'face') selectSingle('face', id)
       else clearSelection()
       return
     }
     if (tool === 'point') {
       const existing = nearestPoint(points, vp, p.x, p.y, HIT_PX)
-      if (existing) {
-        selectSingle('point', existing.id)
-      } else {
+      if (existing) selectSingle('point', existing.id)
+      else {
         const w = screenToWorld(vp, p.x, p.y)
         const sn = snapWorld(w.x, w.z, domain.gridSpacing)
         selectSingle('point', addPoint(sn.x, sn.z))
@@ -207,7 +256,7 @@ export function EditorStage() {
         setPendingLineStart(endId)
       } else {
         if (endId !== pendingLineStart) addSegment(pendingLineStart, endId)
-        setPendingLineStart(endId) // chain into a polyline
+        setPendingLineStart(endId)
       }
     }
   }
@@ -219,11 +268,18 @@ export function EditorStage() {
   const selPoints = new Set(selection.pointIds)
   const selSegments = new Set(selection.segmentIds)
   const selRegions = new Set(selection.regionIds)
+  const selFaces = new Set(selection.faceIds)
+
+  const faceVerts = (pointIds: string[]): Vec2[] =>
+    pointIds
+      .map((pid) => byId.get(pid))
+      .filter((p): p is NonNullable<typeof p> => Boolean(p))
+      .map((p) => ({ x: p.x, z: p.z }))
 
   const domTL = worldToScreen(vp, domain.xmin, domain.zmax)
   const domBR = worldToScreen(vp, domain.xmax, domain.zmin)
 
-  const startPt = pendingLineStart ? points.find((p) => p.id === pendingLineStart) : undefined
+  const startPt = pendingLineStart ? byId.get(pendingLineStart) : undefined
   const startScreen = startPt ? worldToScreen(vp, startPt.x, startPt.z) : null
 
   const cursor =
@@ -240,9 +296,9 @@ export function EditorStage() {
           onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
-          onMouseUp={endPan}
-          onMouseLeave={() => {
-            endPan()
+          onMouseUp={finishMarquee}
+          onMouseLeave={(e) => {
+            finishMarquee(e)
             setHover(null)
           }}
           onClick={handleClick}
@@ -267,6 +323,34 @@ export function EditorStage() {
             />
           </Layer>
 
+          {/* Faces, filled by the material of the region seed inside them. */}
+          <Layer>
+            {faces.map((f) => {
+              const verts = faceVerts(f.pointIds)
+              if (verts.length < 3) return null
+              const flat = verts.flatMap((v) => {
+                const s = worldToScreen(vp, v.x, v.z)
+                return [s.sx, s.sy]
+              })
+              const region = regions.find((r) => pointInPolygon({ x: r.x, z: r.z }, verts))
+              const selected = selFaces.has(f.id)
+              const fill = region ? colorOf(region.mattype) : '#cbd5e1'
+              return (
+                <Line
+                  key={f.id}
+                  id={f.id}
+                  name="face"
+                  points={flat}
+                  closed
+                  fill={fill}
+                  opacity={selected ? 0.5 : 0.22}
+                  stroke={selected ? SELECT : 'transparent'}
+                  strokeWidth={selected ? 2 : 0}
+                />
+              )
+            })}
+          </Layer>
+
           <Layer>
             {regions.map((r) => {
               const s = worldToScreen(vp, r.x, r.z)
@@ -280,16 +364,16 @@ export function EditorStage() {
                   y={s.sy}
                   radius={POINT_RADIUS + (selected ? 4 : 2)}
                   fill={colorOf(r.mattype)}
-                  opacity={selected ? 0.7 : 0.35}
-                  stroke={selected ? SELECT : colorOf(r.mattype)}
-                  strokeWidth={selected ? 2 : 1.5}
+                  opacity={selected ? 0.85 : 0.5}
+                  stroke={selected ? SELECT : '#ffffff'}
+                  strokeWidth={selected ? 2 : 1}
                   hitStrokeWidth={10}
                 />
               )
             })}
             {segments.map((seg) => {
-              const p0 = points.find((p) => p.id === seg.p0)
-              const p1 = points.find((p) => p.id === seg.p1)
+              const p0 = byId.get(seg.p0)
+              const p1 = byId.get(seg.p1)
               if (!p0 || !p1) return null
               const a = worldToScreen(vp, p0.x, p0.z)
               const b = worldToScreen(vp, p1.x, p1.z)
@@ -344,6 +428,18 @@ export function EditorStage() {
                 stroke={hover.existingId ? SELECT : '#a855f7'}
                 strokeWidth={2}
                 fill={hover.existingId ? 'rgba(124,58,237,0.15)' : 'rgba(168,85,247,0.1)'}
+              />
+            )}
+            {marquee && (
+              <Rect
+                x={marquee.x0}
+                y={marquee.y0}
+                width={marquee.x1 - marquee.x0}
+                height={marquee.y1 - marquee.y0}
+                fill="rgba(124,58,237,0.1)"
+                stroke={SELECT}
+                strokeWidth={1}
+                dash={[4, 2]}
               />
             )}
           </Layer>

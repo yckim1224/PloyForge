@@ -1,12 +1,14 @@
 import { create } from 'zustand'
-import type { Domain, Material, Point, PolyDocument, Region, Segment } from '../types'
+import type { Domain, Face, Material, Point, PolyDocument, Region, Segment } from '../types'
 import { uid } from '../lib/id'
 import { coordKey } from '../lib/geometry'
 import { defaultDomain } from '../lib/defaults'
 import { materialColor } from '../constants/materials'
+import { detectFaces } from '../poly/faces'
 
 export type Tool = 'select' | 'point' | 'line' | 'pan'
 export type SelectableKind = 'point' | 'segment' | 'region' | 'face'
+export type MarqueeTarget = 'point' | 'segment' | 'face'
 
 export interface Selection {
   pointIds: string[]
@@ -41,8 +43,12 @@ export interface EditorState {
   segments: Segment[]
   regions: Region[]
   materials: Material[]
+  /** Derived closed faces (recomputed on geometry change). */
+  faces: Face[]
   selection: Selection
   tool: Tool
+  /** Which element type a marquee (rubber-band) drag selects by default. */
+  marqueeTarget: MarqueeTarget
   /** Point id of the in-progress line's first endpoint (line tool). */
   pendingLineStart: string | null
   /** Bumped to ask the canvas to fit the view to the domain. */
@@ -51,10 +57,15 @@ export interface EditorState {
   // View & tools
   requestFit: () => void
   setTool: (tool: Tool) => void
+  setMarqueeTarget: (t: MarqueeTarget) => void
   setPendingLineStart: (id: string | null) => void
+
+  // Derived faces
+  recomputeFaces: () => void
 
   // Selection helpers
   selectSingle: (kind: SelectableKind, id: string) => void
+  selectMany: (kind: SelectableKind, ids: string[]) => void
   toggleSelect: (kind: SelectableKind, id: string) => void
   deleteSelection: () => void
 
@@ -109,19 +120,41 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   segments: [],
   regions: [],
   materials: [],
+  faces: [],
   selection: emptySelection(),
   tool: 'select',
+  marqueeTarget: 'point',
   pendingLineStart: null,
   fitNonce: 0,
 
   requestFit: () => set((s) => ({ fitNonce: s.fitNonce + 1 })),
   setTool: (tool) =>
     set((s) => ({ tool, pendingLineStart: tool === 'line' ? s.pendingLineStart : null })),
+  setMarqueeTarget: (t) => set({ marqueeTarget: t }),
   setPendingLineStart: (id) => set({ pendingLineStart: id }),
+
+  recomputeFaces: () =>
+    set((s) => {
+      const faces = detectFaces(s.points, s.segments)
+      const valid = new Set(faces.map((f) => f.id))
+      return {
+        faces,
+        selection: {
+          ...s.selection,
+          faceIds: s.selection.faceIds.filter((id) => valid.has(id)),
+        },
+      }
+    }),
 
   selectSingle: (kind, id) => {
     const sel = emptySelection()
     sel[KIND_KEY[kind]] = [id]
+    set({ selection: sel })
+  },
+
+  selectMany: (kind, ids) => {
+    const sel = emptySelection()
+    sel[KIND_KEY[kind]] = ids
     set({ selection: sel })
   },
 
@@ -154,12 +187,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((s) => ({
       points: s.points.map((p) => (p.id === id ? { ...p, x, z } : p)),
     }))
+    get().recomputeFaces()
   },
 
   updatePoint: (id, patch) => {
     set((s) => ({
       points: s.points.map((p) => (p.id === id ? { ...p, ...patch } : p)),
     }))
+    get().recomputeFaces()
   },
 
   addSegment: (p0, p1, bdryFlag = 0) => {
@@ -167,6 +202,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (segmentExists(get().segments, p0, p1)) return null
     const id = uid('s')
     set((s) => ({ segments: [...s.segments, { id, p0, p1, bdryFlag }] }))
+    get().recomputeFaces()
     return id
   },
 
@@ -228,6 +264,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       pendingLineStart:
         s.pendingLineStart && idSet.has(s.pendingLineStart) ? null : s.pendingLineStart,
     }))
+    get().recomputeFaces()
   },
 
   removeSegments: (ids) => {
@@ -239,6 +276,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         segmentIds: s.selection.segmentIds.filter((id) => !idSet.has(id)),
       },
     }))
+    get().recomputeFaces()
   },
 
   removeRegions: (ids) => {
@@ -273,7 +311,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   clearSelection: () => set({ selection: emptySelection() }),
 
-  loadDocument: (doc) =>
+  loadDocument: (doc) => {
     set((s) => ({
       domain: doc.domain,
       points: doc.points,
@@ -283,7 +321,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selection: emptySelection(),
       pendingLineStart: null,
       fitNonce: s.fitNonce + 1,
-    })),
+    }))
+    get().recomputeFaces()
+  },
 
   toDocument: () => {
     const s = get()
@@ -303,6 +343,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       segments: [],
       regions: [],
       materials: [],
+      faces: [],
       selection: emptySelection(),
       pendingLineStart: null,
     }),

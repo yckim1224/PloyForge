@@ -1,10 +1,45 @@
 import { useState, type ReactNode } from 'react'
 import { Button } from '@heroui/react'
 import { Crosshair, Upload } from 'lucide-react'
-import { useEditorStore } from '../store/editorStore'
+import { useEditorStore, type MarqueeTarget } from '../store/editorStore'
 import { SAMPLES } from '../samples'
 import { parsePoly } from '../poly/parse'
 import { AddCard } from './AddCard'
+
+const MARQUEE_OPTIONS: { id: MarqueeTarget; label: string }[] = [
+  { id: 'point', label: 'Points' },
+  { id: 'segment', label: 'Segments' },
+  { id: 'face', label: 'Faces' },
+]
+
+function MarqueeToggle() {
+  const marqueeTarget = useEditorStore((s) => s.marqueeTarget)
+  const setMarqueeTarget = useEditorStore((s) => s.setMarqueeTarget)
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="inline-flex rounded-md border border-neutral-200 p-0.5">
+        {MARQUEE_OPTIONS.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => setMarqueeTarget(o.id)}
+            className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
+              marqueeTarget === o.id
+                ? 'bg-violet-600 text-white'
+                : 'text-neutral-600 hover:bg-neutral-100'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-neutral-400">
+        Drag to marquee-select. Hold <kbd className="font-mono">Shift</kbd> for segments,{' '}
+        <kbd className="font-mono">Ctrl</kbd> for faces.
+      </p>
+    </div>
+  )
+}
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -31,6 +66,7 @@ export function ControlPanel() {
   const requestFit = useEditorStore((s) => s.requestFit)
   const nPoints = useEditorStore((s) => s.points.length)
   const nSegments = useEditorStore((s) => s.segments.length)
+  const nFaces = useEditorStore((s) => s.faces.length)
   const nRegions = useEditorStore((s) => s.regions.length)
   const [sampleId, setSampleId] = useState(SAMPLES[0].id)
 
@@ -73,10 +109,15 @@ export function ControlPanel() {
         <AddCard />
       </Section>
 
+      <Section title="Marquee select">
+        <MarqueeToggle />
+      </Section>
+
       <Section title="Statistics">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Stat label="Points" value={nPoints} />
           <Stat label="Segments" value={nSegments} />
+          <Stat label="Faces" value={nFaces} />
           <Stat label="Regions" value={nRegions} />
         </div>
       </Section>
