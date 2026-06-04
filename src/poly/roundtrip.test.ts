@@ -1,8 +1,9 @@
-import { describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test } from 'vitest'
 import { parsePoly } from './parse'
 import { serializePoly } from './serialize'
 import type { PolyDocument } from '../types'
 import { SAMPLES } from '../samples'
+import { useEditorStore } from '../store/editorStore'
 
 /** A structural fingerprint that is independent of internal ids and point ordering. */
 function signature(doc: PolyDocument) {
@@ -41,6 +42,19 @@ describe('parse <-> serialize roundtrip on all sample files', () => {
       expect(signature(second.doc)).toEqual(signature(first.doc))
     })
   }
+
+  describe('import -> store -> export reproduces an equivalent file', () => {
+    beforeEach(() => useEditorStore.getState().reset())
+    for (const s of SAMPLES) {
+      test(`${s.id} survives the store round-trip`, () => {
+        const imported = parsePoly(s.content)
+        useEditorStore.getState().loadDocument(imported.doc)
+        const exported = serializePoly(useEditorStore.getState().toDocument())
+        const reparsed = parsePoly(exported)
+        expect(signature(reparsed.doc)).toEqual(signature(imported.doc))
+      })
+    }
+  })
 
   test('serialized output uses contiguous 0-based node indexing', () => {
     const { doc } = parsePoly(SAMPLES[0].content)

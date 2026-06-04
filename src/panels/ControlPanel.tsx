@@ -8,6 +8,7 @@ import { AddCard } from './AddCard'
 import { InspectorCard } from './InspectorCard'
 import { BulkCard } from './BulkCard'
 import { MaterialLegend } from './MaterialLegend'
+import { ImportExportCard } from './ImportExportCard'
 
 const MARQUEE_OPTIONS: { id: MarqueeTarget; label: string }[] = [
   { id: 'point', label: 'Points' },
@@ -106,6 +107,10 @@ export function ControlPanel() {
             </Button>
           </div>
         </div>
+      </Section>
+
+      <Section title="File">
+        <ImportExportCard />
       </Section>
 
       <Section title="Inspector">
