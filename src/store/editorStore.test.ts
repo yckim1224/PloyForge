@@ -92,6 +92,57 @@ describe('editorStore', () => {
     expect(store().pendingLineStart).toBeNull()
   })
 
+  test('autoAssignBoundaryFlags sets left/right/bottom/top from the domain extent', () => {
+    store().setDomain({ xmin: 0, xmax: 100, zmin: -100, zmax: 0 })
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    const top = store().addSegment(a, b)!
+    const right = store().addSegment(b, c)!
+    const bottom = store().addSegment(c, d)!
+    const left = store().addSegment(d, a)!
+    store().autoAssignBoundaryFlags()
+    const flag = (id: string) => store().segments.find((s) => s.id === id)!.bdryFlag
+    expect(flag(top)).toBe(32)
+    expect(flag(right)).toBe(2)
+    expect(flag(bottom)).toBe(16)
+    expect(flag(left)).toBe(1)
+  })
+
+  test('setSegmentFlag updates only the given segments', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const s = store().addSegment(a, b)!
+    store().setSegmentFlag([s], 16)
+    expect(store().segments[0].bdryFlag).toBe(16)
+  })
+
+  test('applyFaceMaterial creates one region at the face centroid, then updates it', () => {
+    store().setDomain({ xmin: 0, xmax: 100, zmin: -100, zmax: 0 })
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    store().addSegment(a, b)
+    store().addSegment(b, c)
+    store().addSegment(c, d)
+    store().addSegment(d, a)
+    expect(store().faces.length).toBe(1)
+    const faceId = store().faces[0].id
+
+    store().applyFaceMaterial([faceId], { mattype: 3, size: 5 })
+    expect(store().regions.length).toBe(1)
+    expect(store().regions[0]).toMatchObject({ mattype: 3, size: 5 })
+    expect(store().regions[0].x).toBeCloseTo(50, 6)
+    expect(store().regions[0].z).toBeCloseTo(-50, 6)
+
+    // Re-applying edits the same region rather than creating a duplicate.
+    store().applyFaceMaterial([faceId], { mattype: 1 })
+    expect(store().regions.length).toBe(1)
+    expect(store().regions[0].mattype).toBe(1)
+  })
+
   test('toDocument / loadDocument round-trips through the store', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)

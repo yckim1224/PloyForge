@@ -5,6 +5,9 @@ import { useEditorStore, type MarqueeTarget } from '../store/editorStore'
 import { SAMPLES } from '../samples'
 import { parsePoly } from '../poly/parse'
 import { AddCard } from './AddCard'
+import { InspectorCard } from './InspectorCard'
+import { BulkCard } from './BulkCard'
+import { MaterialLegend } from './MaterialLegend'
 
 const MARQUEE_OPTIONS: { id: MarqueeTarget; label: string }[] = [
   { id: 'point', label: 'Points' },
@@ -105,12 +108,24 @@ export function ControlPanel() {
         </div>
       </Section>
 
+      <Section title="Inspector">
+        <InspectorCard />
+      </Section>
+
       <Section title="Add geometry">
         <AddCard />
       </Section>
 
       <Section title="Marquee select">
         <MarqueeToggle />
+      </Section>
+
+      <Section title="Bulk edit">
+        <BulkCard />
+      </Section>
+
+      <Section title="Materials">
+        <MaterialLegend />
       </Section>
 
       <Section title="Statistics">

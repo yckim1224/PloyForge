@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import type { Domain, Face, Material, Point, PolyDocument, Region, Segment } from '../types'
 import { uid } from '../lib/id'
-import { coordKey } from '../lib/geometry'
+import { coordKey, pointInPolygon, type Vec2 } from '../lib/geometry'
 import { defaultDomain } from '../lib/defaults'
 import { materialColor } from '../constants/materials'
+import { autoBoundaryFlag } from '../poly/boundary'
 import { detectFaces } from '../poly/faces'
 
 export type Tool = 'select' | 'point' | 'line' | 'pan'
@@ -82,8 +83,12 @@ export interface EditorState {
     autoCreate: boolean,
   ) => AddLineResult
   updateSegment: (id: string, patch: Partial<Pick<Segment, 'bdryFlag'>>) => void
+  setSegmentFlag: (ids: string[], flag: number) => void
+  autoAssignBoundaryFlags: (ids?: string[]) => void
   addRegion: (x: number, z: number, mattype?: number, size?: number) => string
   updateRegion: (id: string, patch: Partial<Omit<Region, 'id'>>) => void
+  /** Assign material/size to the region inside each face (creating a seed if needed). */
+  applyFaceMaterial: (faceIds: string[], patch: { mattype?: number; size?: number }) => void
   removePoints: (ids: string[]) => void
   removeSegments: (ids: string[]) => void
   removeRegions: (ids: string[]) => void
@@ -237,6 +242,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }))
   },
 
+  setSegmentFlag: (ids, flag) => {
+    const idSet = new Set(ids)
+    set((s) => ({
+      segments: s.segments.map((seg) => (idSet.has(seg.id) ? { ...seg, bdryFlag: flag } : seg)),
+    }))
+  },
+
+  autoAssignBoundaryFlags: (ids) => {
+    const { points, domain } = get()
+    const byId = new Map(points.map((p) => [p.id, p]))
+    const target = ids ? new Set(ids) : null
+    set((s) => ({
+      segments: s.segments.map((seg) => {
+        if (target && !target.has(seg.id)) return seg
+        const a = byId.get(seg.p0)
+        const b = byId.get(seg.p1)
+        if (!a || !b) return seg
+        return { ...seg, bdryFlag: autoBoundaryFlag(a, b, domain) }
+      }),
+    }))
+  },
+
   addRegion: (x, z, mattype = 0, size = -1) => {
     const id = uid('r')
     get().ensureMaterial(mattype)
@@ -249,6 +276,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((s) => ({
       regions: s.regions.map((r) => (r.id === id ? { ...r, ...patch } : r)),
     }))
+  },
+
+  applyFaceMaterial: (faceIds, patch) => {
+    const { faces, points } = get()
+    const byId = new Map(points.map((p) => [p.id, p]))
+    for (const fid of faceIds) {
+      const face = faces.find((f) => f.id === fid)
+      if (!face) continue
+      const verts: Vec2[] = face.pointIds
+        .map((pid) => byId.get(pid))
+        .filter((p): p is Point => Boolean(p))
+        .map((p) => ({ x: p.x, z: p.z }))
+      const region = get().regions.find((r) => pointInPolygon({ x: r.x, z: r.z }, verts))
+      if (region) {
+        get().updateRegion(region.id, patch)
+      } else {
+        get().addRegion(face.centroid.x, face.centroid.z, patch.mattype ?? 0, patch.size ?? -1)
+      }
+    }
   },
 
   removePoints: (ids) => {
