@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Circle, Layer, Line, Rect, Stage } from 'react-konva'
 import type Konva from 'konva'
-import { useEditorStore } from '../store/editorStore'
+import { redoEdit, undoEdit, useEditorStore } from '../store/editorStore'
 import { materialColor } from '../constants/materials'
 import { boundaryColor, boundaryDash } from '../poly/boundary'
 import { pointInPolygon, type Vec2 } from '../lib/geometry'
@@ -101,6 +101,17 @@ export function EditorStage() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault()
+        if (e.shiftKey) redoEdit()
+        else undoEdit()
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault()
+        redoEdit()
+        return
+      }
       switch (e.key) {
         case 'Delete':
         case 'Backspace':

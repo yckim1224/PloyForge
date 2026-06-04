@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { temporal } from 'zundo'
 import type { Domain, Face, Material, Point, PolyDocument, Region, Segment } from '../types'
 import { uid } from '../lib/id'
 import { coordKey, pointInPolygon, type Vec2 } from '../lib/geometry'
@@ -119,7 +120,9 @@ function segmentExists(segments: Segment[], a: string, b: string): boolean {
   )
 }
 
-export const useEditorStore = create<EditorState>((set, get) => ({
+export const useEditorStore = create<EditorState>()(
+  temporal(
+    (set, get) => ({
   domain: defaultDomain(),
   points: [],
   segments: [],
@@ -393,4 +396,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selection: emptySelection(),
       pendingLineStart: null,
     }),
-}))
+    }),
+    {
+      // Only geometry is undoable; selection/tool/faces are derived or transient.
+      partialize: (s) => ({
+        domain: s.domain,
+        points: s.points,
+        segments: s.segments,
+        regions: s.regions,
+        materials: s.materials,
+      }),
+      limit: 100,
+      equality: (a, b) =>
+        a.points === b.points &&
+        a.segments === b.segments &&
+        a.regions === b.regions &&
+        a.materials === b.materials &&
+        a.domain === b.domain,
+    },
+  ),
+)
+
+/** Undo the last geometry change and refresh derived faces. */
+export function undoEdit() {
+  useEditorStore.temporal.getState().undo()
+  useEditorStore.getState().recomputeFaces()
+  useEditorStore.getState().clearSelection()
+}
+
+/** Redo the last undone geometry change and refresh derived faces. */
+export function redoEdit() {
+  useEditorStore.temporal.getState().redo()
+  useEditorStore.getState().recomputeFaces()
+  useEditorStore.getState().clearSelection()
+}

@@ -5,9 +5,9 @@ import { useEditorStore } from '../store/editorStore'
 import { BOUNDARY_OPTIONS_2D } from '../poly/boundary'
 
 const selectClass =
-  'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm focus:border-violet-500 focus:outline-none'
+  'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm focus:border-violet-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100'
 const inputClass =
-  'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm tabular-nums focus:border-violet-500 focus:outline-none'
+  'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm tabular-nums focus:border-violet-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100'
 
 export function BulkCard() {
   const segments = useEditorStore((s) => s.segments)

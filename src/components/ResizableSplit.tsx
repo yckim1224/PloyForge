@@ -61,7 +61,7 @@ export function ResizableSplit({
         role="separator"
         aria-orientation="vertical"
         onMouseDown={startDrag}
-        className="w-1 shrink-0 cursor-col-resize bg-neutral-200 transition-colors hover:bg-violet-400"
+        className="w-1 shrink-0 cursor-col-resize bg-neutral-200 transition-colors hover:bg-violet-400 dark:bg-neutral-800"
       />
       <div className="h-full min-w-0 flex-1">{right}</div>
     </div>

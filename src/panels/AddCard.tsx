@@ -57,7 +57,7 @@ export function AddCard() {
           <NumberInput name="x2" label="x2 (m)" />
           <NumberInput name="z2" label="z2 (m)" />
         </div>
-        <label className="flex items-center gap-2 text-xs text-neutral-600">
+        <label className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
           <input
             type="checkbox"
             checked={auto}
