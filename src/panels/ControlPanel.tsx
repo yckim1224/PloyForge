@@ -4,6 +4,7 @@ import { Crosshair, Upload } from 'lucide-react'
 import { useEditorStore } from '../store/editorStore'
 import { SAMPLES } from '../samples'
 import { parsePoly } from '../poly/parse'
+import { AddCard } from './AddCard'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -66,6 +67,10 @@ export function ControlPanel() {
             </Button>
           </div>
         </div>
+      </Section>
+
+      <Section title="Add geometry">
+        <AddCard />
       </Section>
 
       <Section title="Statistics">

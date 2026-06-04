@@ -52,6 +52,46 @@ describe('editorStore', () => {
     expect(store().segments.length).toBe(0)
   })
 
+  test('selectSingle replaces selection; toggleSelect adds/removes', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().selectSingle('point', a)
+    expect(store().selection.pointIds).toEqual([a])
+    store().selectSingle('point', b)
+    expect(store().selection.pointIds).toEqual([b]) // replaced
+    store().toggleSelect('point', a)
+    expect(store().selection.pointIds.sort()).toEqual([a, b].sort())
+    store().toggleSelect('point', a)
+    expect(store().selection.pointIds).toEqual([b]) // removed
+  })
+
+  test('deleteSelection removes selected points (with cascade) and clears selection', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().addSegment(a, b)
+    store().selectSingle('point', a)
+    store().deleteSelection()
+    expect(store().points.length).toBe(1)
+    expect(store().segments.length).toBe(0)
+    expect(store().selection.pointIds).toEqual([])
+  })
+
+  test('switching away from the line tool clears the pending line start', () => {
+    const a = store().addPoint(0, 0)
+    store().setTool('line')
+    store().setPendingLineStart(a)
+    expect(store().pendingLineStart).toBe(a)
+    store().setTool('select')
+    expect(store().pendingLineStart).toBeNull()
+  })
+
+  test('deleting the pending line start point clears it', () => {
+    const a = store().addPoint(0, 0)
+    store().setPendingLineStart(a)
+    store().removePoints([a])
+    expect(store().pendingLineStart).toBeNull()
+  })
+
   test('toDocument / loadDocument round-trips through the store', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)

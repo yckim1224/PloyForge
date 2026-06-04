@@ -5,11 +5,21 @@ import { coordKey } from '../lib/geometry'
 import { defaultDomain } from '../lib/defaults'
 import { materialColor } from '../constants/materials'
 
+export type Tool = 'select' | 'point' | 'line' | 'pan'
+export type SelectableKind = 'point' | 'segment' | 'region' | 'face'
+
 export interface Selection {
   pointIds: string[]
   segmentIds: string[]
   faceIds: string[]
   regionIds: string[]
+}
+
+const KIND_KEY: Record<SelectableKind, keyof Selection> = {
+  point: 'pointIds',
+  segment: 'segmentIds',
+  region: 'regionIds',
+  face: 'faceIds',
 }
 
 export const emptySelection = (): Selection => ({
@@ -32,11 +42,21 @@ export interface EditorState {
   regions: Region[]
   materials: Material[]
   selection: Selection
+  tool: Tool
+  /** Point id of the in-progress line's first endpoint (line tool). */
+  pendingLineStart: string | null
   /** Bumped to ask the canvas to fit the view to the domain. */
   fitNonce: number
 
-  // View
+  // View & tools
   requestFit: () => void
+  setTool: (tool: Tool) => void
+  setPendingLineStart: (id: string | null) => void
+
+  // Selection helpers
+  selectSingle: (kind: SelectableKind, id: string) => void
+  toggleSelect: (kind: SelectableKind, id: string) => void
+  deleteSelection: () => void
 
   // Geometry mutations
   addPoint: (x: number, z: number) => string
@@ -90,9 +110,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   regions: [],
   materials: [],
   selection: emptySelection(),
+  tool: 'select',
+  pendingLineStart: null,
   fitNonce: 0,
 
   requestFit: () => set((s) => ({ fitNonce: s.fitNonce + 1 })),
+  setTool: (tool) =>
+    set((s) => ({ tool, pendingLineStart: tool === 'line' ? s.pendingLineStart : null })),
+  setPendingLineStart: (id) => set({ pendingLineStart: id }),
+
+  selectSingle: (kind, id) => {
+    const sel = emptySelection()
+    sel[KIND_KEY[kind]] = [id]
+    set({ selection: sel })
+  },
+
+  toggleSelect: (kind, id) => {
+    set((s) => {
+      const key = KIND_KEY[kind]
+      const arr = s.selection[key]
+      const next = arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]
+      return { selection: { ...s.selection, [key]: next } }
+    })
+  },
+
+  deleteSelection: () => {
+    const sel = get().selection
+    if (sel.pointIds.length) get().removePoints(sel.pointIds)
+    if (sel.segmentIds.length) get().removeSegments(sel.segmentIds)
+    if (sel.regionIds.length) get().removeRegions(sel.regionIds)
+    get().clearSelection()
+  },
 
   addPoint: (x, z) => {
     const existing = findPointByCoord(get().points, x, z)
@@ -177,6 +225,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...s.selection,
         pointIds: s.selection.pointIds.filter((id) => !idSet.has(id)),
       },
+      pendingLineStart:
+        s.pendingLineStart && idSet.has(s.pendingLineStart) ? null : s.pendingLineStart,
     }))
   },
 
@@ -231,6 +281,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       regions: doc.regions,
       materials: doc.materials,
       selection: emptySelection(),
+      pendingLineStart: null,
       fitNonce: s.fitNonce + 1,
     })),
 
@@ -253,5 +304,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       regions: [],
       materials: [],
       selection: emptySelection(),
+      pendingLineStart: null,
     }),
 }))
