@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { temporal } from 'zundo'
 import type { Domain, Face, Material, Point, PolyDocument, Region, Segment } from '../types'
 import { uid } from '../lib/id'
-import { coordKey, pointInPolygon, type Vec2 } from '../lib/geometry'
+import { coordKey, pointInPolygon, pointOnSegment, type Vec2 } from '../lib/geometry'
 import { defaultDomain } from '../lib/defaults'
 import { materialColor } from '../constants/materials'
 import { autoBoundaryFlag } from '../poly/boundary'
@@ -76,6 +76,8 @@ export interface EditorState {
   movePoint: (id: string, x: number, z: number) => void
   updatePoint: (id: string, patch: Partial<Pick<Point, 'x' | 'z'>>) => void
   addSegment: (p0: string, p1: string, bdryFlag?: number) => string | null
+  /** Split any existing segment whose interior the point lies on (T-junction noding). */
+  splitSegmentsAt: (pointId: string) => void
   addLineByCoords: (
     x1: number,
     z1: number,
@@ -93,6 +95,8 @@ export interface EditorState {
   removePoints: (ids: string[]) => void
   removeSegments: (ids: string[]) => void
   removeRegions: (ids: string[]) => void
+  /** Remove region seeds that no longer sit inside any detected face. */
+  removeOrphanRegions: () => void
 
   // Domain & materials
   setDomain: (patch: Partial<Domain>) => void
@@ -188,6 +192,8 @@ export const useEditorStore = create<EditorState>()(
     if (existing) return existing.id
     const id = uid('p')
     set((s) => ({ points: [...s.points, { id, x, z }] }))
+    // Node any edge this point lands on so faces split correctly.
+    get().splitSegmentsAt(id)
     return id
   },
 
@@ -212,6 +218,33 @@ export const useEditorStore = create<EditorState>()(
     set((s) => ({ segments: [...s.segments, { id, p0, p1, bdryFlag }] }))
     get().recomputeFaces()
     return id
+  },
+
+  splitSegmentsAt: (pointId) => {
+    const { points, segments } = get()
+    const p = points.find((pt) => pt.id === pointId)
+    if (!p) return
+    const byId = new Map(points.map((pt) => [pt.id, pt]))
+    const hits = segments.filter((s) => {
+      if (s.p0 === pointId || s.p1 === pointId) return false
+      const a = byId.get(s.p0)
+      const b = byId.get(s.p1)
+      return a !== undefined && b !== undefined && pointOnSegment(p, a, b)
+    })
+    if (hits.length === 0) return
+    const hitIds = new Set(hits.map((s) => s.id))
+    const added = hits.flatMap((s) => [
+      { id: uid('s'), p0: s.p0, p1: pointId, bdryFlag: s.bdryFlag },
+      { id: uid('s'), p0: pointId, p1: s.p1, bdryFlag: s.bdryFlag },
+    ])
+    set((s) => ({
+      segments: [...s.segments.filter((seg) => !hitIds.has(seg.id)), ...added],
+      selection: {
+        ...s.selection,
+        segmentIds: s.selection.segmentIds.filter((id) => !hitIds.has(id)),
+      },
+    }))
+    get().recomputeFaces()
   },
 
   addLineByCoords: (x1, z1, x2, z2, autoCreate) => {
@@ -337,6 +370,21 @@ export const useEditorStore = create<EditorState>()(
         regionIds: s.selection.regionIds.filter((id) => !idSet.has(id)),
       },
     }))
+  },
+
+  removeOrphanRegions: () => {
+    const { regions, faces, points } = get()
+    const byId = new Map(points.map((p) => [p.id, p]))
+    const faceVerts = faces.map((f) =>
+      f.pointIds
+        .map((id) => byId.get(id))
+        .filter((p): p is Point => p !== undefined)
+        .map((p) => ({ x: p.x, z: p.z })),
+    )
+    const orphanIds = regions
+      .filter((r) => !faceVerts.some((verts) => pointInPolygon({ x: r.x, z: r.z }, verts)))
+      .map((r) => r.id)
+    if (orphanIds.length > 0) get().removeRegions(orphanIds)
   },
 
   setDomain: (patch) => set((s) => ({ domain: { ...s.domain, ...patch } })),

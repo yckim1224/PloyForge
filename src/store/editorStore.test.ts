@@ -143,6 +143,42 @@ describe('editorStore', () => {
     expect(store().regions[0].mattype).toBe(1)
   })
 
+  test('drawing a line across a face splits it into two faces (T-junction noding)', () => {
+    // Build a closed square -> 1 face.
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    store().addSegment(a, b) // top edge
+    store().addSegment(b, c)
+    store().addSegment(c, d) // bottom edge
+    store().addSegment(d, a)
+    expect(store().faces.length).toBe(1)
+
+    // Draw a vertical line whose endpoints land mid-edge (new points on the
+    // top and bottom edges). This must split the square into two faces.
+    const res = store().addLineByCoords(50, 0, 50, -100, true)
+    expect(res.segmentId).not.toBeNull()
+    expect(store().faces.length).toBe(2)
+  })
+
+  test('removeOrphanRegions drops seeds that fall outside every face', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    store().addSegment(a, b)
+    store().addSegment(b, c)
+    store().addSegment(c, d)
+    store().addSegment(d, a)
+    store().addRegion(50, -50, 0) // inside the face
+    store().addRegion(999, 999, 1) // outside every face
+    expect(store().regions.length).toBe(2)
+    store().removeOrphanRegions()
+    expect(store().regions.length).toBe(1)
+    expect(store().regions[0]).toMatchObject({ x: 50, z: -50 })
+  })
+
   test('toDocument / loadDocument round-trips through the store', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)

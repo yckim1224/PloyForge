@@ -15,7 +15,7 @@ import {
   zoomAt,
   type Viewport,
 } from './viewport'
-import { nearestPoint, snapWorld } from './snapping'
+import { nearestPoint, nearestSegmentPoint, snapWorld } from './snapping'
 import {
   facesInRect,
   normalizeRect,
@@ -174,6 +174,19 @@ export function EditorStage() {
     }
   }
 
+  // Snap priority for placing a point: existing vertex -> point on an edge -> grid.
+  const resolveTarget = (
+    px: number,
+    py: number,
+  ): { x: number; z: number; existingId?: string } => {
+    const existing = nearestPoint(points, vp, px, py, HIT_PX)
+    if (existing) return { x: existing.x, z: existing.z, existingId: existing.id }
+    const onSeg = nearestSegmentPoint(segments, points, vp, px, py, HIT_PX)
+    if (onSeg) return onSeg
+    const w = screenToWorld(vp, px, py)
+    return snapWorld(w.x, w.z, domain.gridSpacing)
+  }
+
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const p = e.target.getStage()?.getPointerPosition()
     if (!p) return
@@ -189,16 +202,9 @@ export function EditorStage() {
       return
     }
     if (tool === 'point' || tool === 'line') {
-      const existing = nearestPoint(points, vp, p.x, p.y, HIT_PX)
-      if (existing) {
-        const s = worldToScreen(vp, existing.x, existing.z)
-        setHover({ sx: s.sx, sy: s.sy, x: existing.x, z: existing.z, existingId: existing.id })
-      } else {
-        const w = screenToWorld(vp, p.x, p.y)
-        const sn = snapWorld(w.x, w.z, domain.gridSpacing)
-        const s = worldToScreen(vp, sn.x, sn.z)
-        setHover({ sx: s.sx, sy: s.sy, x: sn.x, z: sn.z })
-      }
+      const tgt = resolveTarget(p.x, p.y)
+      const s = worldToScreen(vp, tgt.x, tgt.z)
+      setHover({ sx: s.sx, sy: s.sy, x: tgt.x, z: tgt.z, existingId: tgt.existingId })
     } else if (hover) {
       setHover(null)
     }
@@ -223,11 +229,8 @@ export function EditorStage() {
   }
 
   const resolveEndpointId = (px: number, py: number): string => {
-    const existing = nearestPoint(points, vp, px, py, HIT_PX)
-    if (existing) return existing.id
-    const w = screenToWorld(vp, px, py)
-    const sn = snapWorld(w.x, w.z, domain.gridSpacing)
-    return addPoint(sn.x, sn.z)
+    const tgt = resolveTarget(px, py)
+    return tgt.existingId ?? addPoint(tgt.x, tgt.z)
   }
 
   const handleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -252,13 +255,8 @@ export function EditorStage() {
       return
     }
     if (tool === 'point') {
-      const existing = nearestPoint(points, vp, p.x, p.y, HIT_PX)
-      if (existing) selectSingle('point', existing.id)
-      else {
-        const w = screenToWorld(vp, p.x, p.y)
-        const sn = snapWorld(w.x, w.z, domain.gridSpacing)
-        selectSingle('point', addPoint(sn.x, sn.z))
-      }
+      const tgt = resolveTarget(p.x, p.y)
+      selectSingle('point', tgt.existingId ?? addPoint(tgt.x, tgt.z))
       return
     }
     if (tool === 'line') {
@@ -286,6 +284,10 @@ export function EditorStage() {
       .map((pid) => byId.get(pid))
       .filter((p): p is NonNullable<typeof p> => Boolean(p))
       .map((p) => ({ x: p.x, z: p.z }))
+
+  const faceVertsList = faces.map((f) => faceVerts(f.pointIds))
+  const isOrphanRegion = (r: { x: number; z: number }) =>
+    !faceVertsList.some((verts) => pointInPolygon({ x: r.x, z: r.z }, verts))
 
   const domTL = worldToScreen(vp, domain.xmin, domain.zmax)
   const domBR = worldToScreen(vp, domain.xmax, domain.zmin)
@@ -366,6 +368,7 @@ export function EditorStage() {
             {regions.map((r) => {
               const s = worldToScreen(vp, r.x, r.z)
               const selected = selRegions.has(r.id)
+              const orphan = isOrphanRegion(r)
               return (
                 <Circle
                   key={r.id}
@@ -375,9 +378,10 @@ export function EditorStage() {
                   y={s.sy}
                   radius={POINT_RADIUS + (selected ? 4 : 2)}
                   fill={colorOf(r.mattype)}
-                  opacity={selected ? 0.85 : 0.5}
-                  stroke={selected ? SELECT : '#ffffff'}
-                  strokeWidth={selected ? 2 : 1}
+                  opacity={orphan ? 0.3 : selected ? 0.85 : 0.5}
+                  stroke={selected ? SELECT : orphan ? '#ef4444' : '#ffffff'}
+                  strokeWidth={selected ? 2 : orphan ? 2 : 1}
+                  dash={orphan ? [3, 2] : undefined}
                   hitStrokeWidth={10}
                 />
               )

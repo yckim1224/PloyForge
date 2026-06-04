@@ -67,6 +67,30 @@ export function snap(value: number, spacing: number, origin = 0): number {
   return origin + Math.round((value - origin) / spacing) * spacing
 }
 
+/** Closest point on segment a-b to p, with perpendicular distance and parameter t in [0,1]. */
+export function projectToSegment(
+  p: Vec2,
+  a: Vec2,
+  b: Vec2,
+): { point: Vec2; dist: number; t: number } {
+  const dx = b.x - a.x
+  const dz = b.z - a.z
+  const len2 = dx * dx + dz * dz
+  if (len2 === 0) {
+    return { point: { x: a.x, z: a.z }, dist: Math.hypot(p.x - a.x, p.z - a.z), t: 0 }
+  }
+  let t = ((p.x - a.x) * dx + (p.z - a.z) * dz) / len2
+  t = Math.max(0, Math.min(1, t))
+  const point = { x: a.x + t * dx, z: a.z + t * dz }
+  return { point, dist: Math.hypot(p.x - point.x, p.z - point.z), t }
+}
+
+/** True if p lies on the interior of segment a-b (within eps, excluding endpoints). */
+export function pointOnSegment(p: Vec2, a: Vec2, b: Vec2, eps = 1e-6): boolean {
+  const { dist, t } = projectToSegment(p, a, b)
+  return dist <= eps && t > 1e-9 && t < 1 - 1e-9
+}
+
 /** Quantized coordinate key used to merge near-identical points (tolerance in meters). */
 export function coordKey(x: number, z: number, tol = 1e-3): string {
   const qx = Math.round(x / tol)
