@@ -28,6 +28,12 @@ describe('validateDocument', () => {
     expect(issues.filter((i) => i.level === 'error')).toEqual([])
   })
 
+  test('errors when there are no regions (DES3D requires nregions >= 1)', () => {
+    const doc = box() // regions: []
+    const issues = validateDocument(doc)
+    expect(issues.some((i) => i.level === 'error' && /nregions/.test(i.message))).toBe(true)
+  })
+
   test('flags a non-single-bit boundary flag as an error', () => {
     const doc = box()
     doc.segments[0].bdryFlag = 3 // 1|2, two bits

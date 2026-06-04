@@ -32,6 +32,13 @@ export function validateDocument(doc: PolyDocument): ValidationIssue[] {
   if (doc.points.length === 0) issues.push({ level: 'warning', message: 'No points defined.' })
   if (doc.segments.length === 0)
     issues.push({ level: 'warning', message: 'No segments defined.' })
+  // DES3D fatally rejects nregions <= 0 (mesh.cxx new_mesh_from_polyfile).
+  if (doc.regions.length === 0)
+    issues.push({
+      level: 'error',
+      message:
+        'DES3D requires at least one region (nregions >= 1). Assign a material to a face to add a region seed.',
+    })
 
   // Boundary flags must be a single bit; endpoints must be valid; no self-loops.
   for (const s of doc.segments) {

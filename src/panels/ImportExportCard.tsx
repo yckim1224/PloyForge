@@ -17,6 +17,7 @@ import { validateDocument, type ValidationIssue } from '../poly/validate'
 export function ImportExportCard() {
   const toDocument = useEditorStore((s) => s.toDocument)
   const loadDocument = useEditorStore((s) => s.loadDocument)
+  const nRegions = useEditorStore((s) => s.regions.length)
   const fileRef = useRef<HTMLInputElement>(null)
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null)
   const [warnings, setWarnings] = useState<string[]>([])
@@ -85,6 +86,14 @@ export function ImportExportCard() {
         onChange={onImportFile}
         className="hidden"
       />
+
+      {nRegions === 0 && (
+        <p className="flex items-start gap-1.5 rounded-md bg-amber-50 p-2 text-xs text-amber-700">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          No regions yet. DES3D requires at least one region — assign a material to a face before
+          meshing.
+        </p>
+      )}
 
       {warnings.length > 0 && (
         <ul className="flex flex-col gap-1 rounded-md bg-amber-50 p-2 text-xs text-amber-700">
