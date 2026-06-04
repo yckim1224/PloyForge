@@ -67,10 +67,6 @@ export function snap(value: number, spacing: number, origin = 0): number {
   return origin + Math.round((value - origin) / spacing) * spacing
 }
 
-export function distance(a: Vec2, b: Vec2): number {
-  return Math.hypot(a.x - b.x, a.z - b.z)
-}
-
 /** Quantized coordinate key used to merge near-identical points (tolerance in meters). */
 export function coordKey(x: number, z: number, tol = 1e-3): string {
   const qx = Math.round(x / tol)

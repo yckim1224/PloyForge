@@ -23,18 +23,10 @@ export const BOUNDARY_OPTIONS_2D: BoundaryOption[] = [
   { value: 32, label: 'Top (Z1)', short: 'Z1' },
 ]
 
-/** 3D-only flags kept for reference/validation (not offered in the 2D editor). */
-export const BOUNDARY_3D_EXTRA = { Y0: 4, Y1: 8, N0: 64, N1: 128, N2: 256, N3: 512 } as const
-
 /** DES3D rejects flags with multiple bits set. 0 and any power of two are valid. */
 export function isSingleBitFlag(flag: number): boolean {
   if (!Number.isInteger(flag) || flag < 0) return false
   return flag === 0 || (flag & (flag - 1)) === 0
-}
-
-export function boundaryShort(flag: number): string {
-  const o = BOUNDARY_OPTIONS_2D.find((x) => x.value === flag)
-  return o ? o.short : `#${flag}`
 }
 
 const FLAG_COLORS: Record<number, string> = {

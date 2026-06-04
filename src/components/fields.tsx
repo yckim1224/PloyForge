@@ -1,5 +1,3 @@
-import type { ReactNode } from 'react'
-
 const inputClass =
   'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm tabular-nums text-neutral-800 focus:border-violet-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100'
 const labelClass = 'text-xs text-neutral-500 dark:text-neutral-400'
@@ -50,8 +48,4 @@ export function NumberValue({
       />
     </label>
   )
-}
-
-export function FieldRow({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-2 gap-2">{children}</div>
 }

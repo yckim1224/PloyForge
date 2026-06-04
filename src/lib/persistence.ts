@@ -21,11 +21,3 @@ export function loadPersisted(): PolyDocument | null {
     return null
   }
 }
-
-export function clearPersisted(): void {
-  try {
-    localStorage.removeItem(KEY)
-  } catch {
-    /* ignore */
-  }
-}
