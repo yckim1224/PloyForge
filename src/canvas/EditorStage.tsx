@@ -402,9 +402,13 @@ export function EditorStage() {
       const endId = resolveEndpointId(p.x, p.y)
       if (!pendingLineStart) {
         setPendingLineStart(endId)
-      } else {
-        if (endId !== pendingLineStart) addLine(pendingLineStart, endId)
-        setPendingLineStart(endId)
+      } else if (endId !== pendingLineStart) {
+        // Only advance the polyline chain when the new line was actually
+        // created. addLine returns null on a duplicate edge (or self-loop);
+        // in that case keep pendingLineStart so the hover preview stays at
+        // the original start, signalling that the click was a no-op.
+        const lineId = addLine(pendingLineStart, endId)
+        if (lineId) setPendingLineStart(endId)
       }
     }
   }
