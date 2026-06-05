@@ -4,6 +4,9 @@ import { AddCard } from './AddCard'
 import { InspectorCard } from './InspectorCard'
 import { BulkCard } from './BulkCard'
 import { AppActions } from './AppActions'
+import { PointsSection } from './PointsSection'
+import { LinesSection } from './LinesSection'
+import { FacesSection } from './FacesSection'
 
 const MARQUEE_OPTIONS: { id: MarqueeTarget; label: string }[] = [
   { id: 'point', label: 'Points' },
@@ -98,6 +101,10 @@ export function ControlPanel() {
           <Stat label="Faces" value={nFaces} />
         </div>
       </Section>
+
+      <PointsSection />
+      <LinesSection />
+      <FacesSection />
     </div>
   )
 }
