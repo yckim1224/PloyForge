@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button } from '@heroui/react'
-import { Eraser, Wand2 } from 'lucide-react'
+import { Wand2 } from 'lucide-react'
 import { useEditorStore } from '../store/editorStore'
 import { BOUNDARY_OPTIONS_2D } from '../poly/boundary'
 
@@ -14,8 +14,7 @@ export function BulkCard() {
   const faces = useEditorStore((s) => s.faces)
   const autoAssign = useEditorStore((s) => s.autoAssignBoundaryFlags)
   const setLineFlag = useEditorStore((s) => s.setLineFlag)
-  const applyFaceMaterial = useEditorStore((s) => s.applyFaceMaterial)
-  const removeOrphanRegions = useEditorStore((s) => s.removeOrphanRegions)
+  const setFaceType = useEditorStore((s) => s.setFaceType)
   const [flag, setFlag] = useState(0)
   const [mattype, setMattype] = useState(0)
 
@@ -67,19 +66,19 @@ export function BulkCard() {
         <Button
           size="sm"
           variant="secondary"
-          onPress={() => applyFaceMaterial(faces.map((f) => f.id), { mattype })}
+          onPress={() => {
+            for (const f of faces) {
+              const size = f.size ?? -1
+              setFaceType(f.id, mattype, size)
+            }
+          }}
         >
           Apply
         </Button>
       </div>
       <p className="text-xs text-neutral-400 dark:text-neutral-500">
-        Filling a face drops a region seed at its center, turning it into a DES3D region.
+        Filling a face records its Type in the face-keyed map (no seed needed).
       </p>
-
-      <Button size="sm" variant="secondary" onPress={removeOrphanRegions}>
-        <Eraser className="size-4" />
-        Remove orphaned regions
-      </Button>
     </div>
   )
 }

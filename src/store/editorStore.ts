@@ -1,35 +1,30 @@
 import { create } from 'zustand'
 import { temporal } from 'zundo'
-import type { Domain, Face, Line, Material, Point, PolyDocument, Region } from '../types'
+import type { Domain, Face, Line, Point, PolyDocument } from '../types'
 import { uid } from '../lib/id'
 import {
   coordKey,
-  interiorPoint,
-  pointInPolygon,
   pointOnSegment,
   projectToSegment,
-  type Vec2,
 } from '../lib/geometry'
 import { defaultDomain } from '../lib/defaults'
-import { materialColor } from '../constants/materials'
 import { autoBoundaryFlag } from '../poly/boundary'
 import { detectFaces } from '../poly/faces'
+import { useSettingsStore } from './settingsStore'
 
 export type Tool = 'select' | 'point' | 'line' | 'pan'
-export type SelectableKind = 'point' | 'line' | 'region' | 'face'
+export type SelectableKind = 'point' | 'line' | 'face'
 export type MarqueeTarget = 'point' | 'line' | 'face'
 
 export interface Selection {
   pointIds: string[]
   lineIds: string[]
   faceIds: string[]
-  regionIds: string[]
 }
 
 const KIND_KEY: Record<SelectableKind, keyof Selection> = {
   point: 'pointIds',
   line: 'lineIds',
-  region: 'regionIds',
   face: 'faceIds',
 }
 
@@ -37,11 +32,10 @@ export const emptySelection = (): Selection => ({
   pointIds: [],
   lineIds: [],
   faceIds: [],
-  regionIds: [],
 })
 
 export interface AddLineResult {
-  segmentId: string | null
+  lineId: string | null
   createdPointIds: string[]
   error?: string
 }
@@ -50,9 +44,8 @@ export interface EditorState {
   domain: Domain
   points: Point[]
   lines: Line[]
-  regions: Region[]
-  materials: Material[]
-  /** Face-keyed material/size map (face id -> spec); coexists with regions in Phase 0a. */
+  /** Face-keyed material/size map. Stale keys (no matching face) are kept; they
+   *  auto-resurrect if the same face reforms (e.g. an Undo). */
   faceTypes: Record<string, { mattype: number; size: number }>
   /** Derived closed faces (recomputed on geometry change). */
   faces: Face[]
@@ -102,27 +95,22 @@ export interface EditorState {
   updateLine: (id: string, patch: Partial<Pick<Line, 'bdryFlag'>>) => void
   setLineFlag: (ids: string[], flag: number) => void
   autoAssignBoundaryFlags: (ids?: string[]) => void
-  addRegion: (x: number, z: number, mattype?: number, size?: number) => string
-  updateRegion: (id: string, patch: Partial<Omit<Region, 'id'>>) => void
-  /** Assign material/size to the region inside each face (creating a seed if needed). */
-  applyFaceMaterial: (faceIds: string[], patch: { mattype?: number; size?: number }) => void
   removePoints: (ids: string[]) => void
   removeLines: (ids: string[]) => void
-  removeRegions: (ids: string[]) => void
-  /** Remove region seeds that no longer sit inside any detected face. */
-  removeOrphanRegions: () => void
 
-  // Domain & materials
+  // Face Types (face-keyed material/size map)
+  setFaceType: (faceId: string, mattype: number, size?: number) => void
+  clearFaceType: (faceId: string) => void
+
+  // Domain
   setDomain: (patch: Partial<Domain>) => void
-  ensureMaterial: (mattype: number) => void
-  setMaterial: (mattype: number, patch: Partial<Omit<Material, 'mattype'>>) => void
 
   // Selection
   setSelection: (sel: Partial<Selection>) => void
   clearSelection: () => void
 
   // Document I/O
-  loadDocument: (doc: PolyDocument) => void
+  loadDocument: (doc: PolyDocument, discoveredMaterials?: number[]) => void
   toDocument: () => PolyDocument
   reset: () => void
 }
@@ -144,8 +132,6 @@ export const useEditorStore = create<EditorState>()(
   domain: defaultDomain(),
   points: [],
   lines: [],
-  regions: [],
-  materials: [],
   faceTypes: {},
   faces: [],
   selection: emptySelection(),
@@ -162,7 +148,15 @@ export const useEditorStore = create<EditorState>()(
 
   recomputeFaces: () =>
     set((s) => {
-      const faces = detectFaces(s.points, s.lines)
+      const detected = detectFaces(s.points, s.lines)
+      // Resolve Type from the face-keyed map. Stale entries (faceId not in
+      // current detection set) stay in faceTypes for resurrection on reform.
+      const faces: Face[] = detected.map((f) => {
+        const spec = s.faceTypes[f.id]
+        return spec
+          ? { ...f, mattype: spec.mattype, size: spec.size }
+          : f
+      })
       const valid = new Set(faces.map((f) => f.id))
       return {
         faces,
@@ -204,21 +198,21 @@ export const useEditorStore = create<EditorState>()(
     const sel = get().selection
     if (sel.pointIds.length) get().removePoints(sel.pointIds)
     if (sel.lineIds.length) get().removeLines(sel.lineIds)
-    if (sel.regionIds.length) get().removeRegions(sel.regionIds)
     get().clearSelection()
   },
 
   nudgeSelection: (dirX, dirZ, large) => {
     const s = get()
     const sel = s.selection
-    const hasSel =
-      sel.pointIds.length || sel.lineIds.length || sel.faceIds.length || sel.regionIds.length
+    const hasSel = sel.pointIds.length || sel.lineIds.length || sel.faceIds.length
     if (!hasSel) return
     const step = s.domain.gridSpacing * (large ? 10 : 1)
     const dx = dirX * step
     const dz = dirZ * step
 
     // Every point referenced by the selection (directly, or via lines/faces) moves once.
+    // Faces are keyed by sorted-pointIds, so translating every vertex preserves
+    // the faceId and therefore the faceTypes entry.
     const movePts = new Set<string>(sel.pointIds)
     const lineById = new Map(s.lines.map((seg) => [seg.id, seg]))
     for (const id of sel.lineIds) {
@@ -232,30 +226,10 @@ export const useEditorStore = create<EditorState>()(
     for (const id of sel.faceIds) {
       faceById.get(id)?.pointIds.forEach((pid) => movePts.add(pid))
     }
-    const moveRegions = new Set(sel.regionIds)
-
-    // A region whose enclosing face moves in full should travel with it, so the
-    // seed keeps its material assignment instead of being orphaned.
-    const ptById = new Map(s.points.map((p) => [p.id, p]))
-    for (const f of s.faces) {
-      if (f.pointIds.length < 3 || !f.pointIds.every((pid) => movePts.has(pid))) continue
-      const verts = f.pointIds
-        .map((pid) => ptById.get(pid))
-        .filter((p): p is Point => p !== undefined)
-        .map((p) => ({ x: p.x, z: p.z }))
-      for (const r of s.regions) {
-        if (!moveRegions.has(r.id) && pointInPolygon({ x: r.x, z: r.z }, verts)) {
-          moveRegions.add(r.id)
-        }
-      }
-    }
 
     set((st) => ({
       points: st.points.map((p) =>
         movePts.has(p.id) ? { ...p, x: p.x + dx, z: p.z + dz } : p,
-      ),
-      regions: st.regions.map((r) =>
-        moveRegions.has(r.id) ? { ...r, x: r.x + dx, z: r.z + dz } : r,
       ),
     }))
     get().recomputeFaces()
@@ -360,22 +334,22 @@ export const useEditorStore = create<EditorState>()(
       // Roll back any points created during this failed call.
       if (created.length) get().removePoints(created)
       return {
-        segmentId: null,
+        lineId: null,
         createdPointIds: [],
         error: 'Endpoint does not match an existing point (enable auto-create).',
       }
     }
-    const segmentId = get().addLine(a, b)
-    if (segmentId === null) {
+    const lineId = get().addLine(a, b)
+    if (lineId === null) {
       // Roll back auto-created points so a rejected line leaves no orphans.
       if (created.length) get().removePoints(created)
       return {
-        segmentId: null,
+        lineId: null,
         createdPointIds: [],
         error: a === b ? 'Endpoints coincide; no line added.' : 'That segment already exists.',
       }
     }
-    return { segmentId, createdPointIds: created }
+    return { lineId, createdPointIds: created }
   },
 
   updateLine: (id, patch) => {
@@ -406,41 +380,6 @@ export const useEditorStore = create<EditorState>()(
     }))
   },
 
-  addRegion: (x, z, mattype = 0, size = -1) => {
-    const id = uid('r')
-    get().ensureMaterial(mattype)
-    set((s) => ({ regions: [...s.regions, { id, x, z, mattype, size }] }))
-    return id
-  },
-
-  updateRegion: (id, patch) => {
-    if (patch.mattype !== undefined) get().ensureMaterial(patch.mattype)
-    set((s) => ({
-      regions: s.regions.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-    }))
-  },
-
-  applyFaceMaterial: (faceIds, patch) => {
-    const { faces, points } = get()
-    const byId = new Map(points.map((p) => [p.id, p]))
-    for (const fid of faceIds) {
-      const face = faces.find((f) => f.id === fid)
-      if (!face) continue
-      const verts: Vec2[] = face.pointIds
-        .map((pid) => byId.get(pid))
-        .filter((p): p is Point => Boolean(p))
-        .map((p) => ({ x: p.x, z: p.z }))
-      const region = get().regions.find((r) => pointInPolygon({ x: r.x, z: r.z }, verts))
-      if (region) {
-        get().updateRegion(region.id, patch)
-      } else {
-        // Seed at a guaranteed-interior point (centroid can fall outside concave faces).
-        const seed = interiorPoint(verts)
-        get().addRegion(seed.x, seed.z, patch.mattype ?? 0, patch.size ?? -1)
-      }
-    }
-  },
-
   removePoints: (ids) => {
     const idSet = new Set(ids)
     set((s) => ({
@@ -469,70 +408,50 @@ export const useEditorStore = create<EditorState>()(
     get().recomputeFaces()
   },
 
-  removeRegions: (ids) => {
-    const idSet = new Set(ids)
+  setFaceType: (faceId, mattype, size = -1) => {
+    // Ensure the settings store has a color entry for this mattype (non-overwriting).
+    useSettingsStore.getState().ensureMaterial(mattype)
     set((s) => ({
-      regions: s.regions.filter((r) => !idSet.has(r.id)),
-      selection: {
-        ...s.selection,
-        regionIds: s.selection.regionIds.filter((id) => !idSet.has(id)),
-      },
+      faceTypes: { ...s.faceTypes, [faceId]: { mattype, size } },
     }))
+    get().recomputeFaces()
   },
 
-  removeOrphanRegions: () => {
-    const { regions, faces, points } = get()
-    const byId = new Map(points.map((p) => [p.id, p]))
-    const faceVerts = faces.map((f) =>
-      f.pointIds
-        .map((id) => byId.get(id))
-        .filter((p): p is Point => p !== undefined)
-        .map((p) => ({ x: p.x, z: p.z })),
-    )
-    let orphanIds = regions
-      .filter((r) => !faceVerts.some((verts) => pointInPolygon({ x: r.x, z: r.z }, verts)))
-      .map((r) => r.id)
-    // DES3D requires nregions >= 1, so never remove the last remaining region.
-    if (regions.length > 0 && orphanIds.length === regions.length) {
-      orphanIds = orphanIds.slice(1)
-    }
-    if (orphanIds.length > 0) get().removeRegions(orphanIds)
+  clearFaceType: (faceId) => {
+    set((s) => {
+      if (!(faceId in s.faceTypes)) return {}
+      const next = { ...s.faceTypes }
+      delete next[faceId]
+      return { faceTypes: next }
+    })
+    get().recomputeFaces()
   },
 
   setDomain: (patch) => set((s) => ({ domain: { ...s.domain, ...patch } })),
-
-  ensureMaterial: (mattype) => {
-    if (get().materials.some((m) => m.mattype === mattype)) return
-    set((s) => ({
-      materials: [...s.materials, { mattype, color: materialColor(mattype) }].sort(
-        (a, b) => a.mattype - b.mattype,
-      ),
-    }))
-  },
-
-  setMaterial: (mattype, patch) => {
-    set((s) => ({
-      materials: s.materials.map((m) => (m.mattype === mattype ? { ...m, ...patch } : m)),
-    }))
-  },
 
   setSelection: (sel) => set((s) => ({ selection: { ...s.selection, ...sel } })),
 
   clearSelection: () => set({ selection: emptySelection() }),
 
-  loadDocument: (doc) => {
+  loadDocument: (doc, discoveredMaterials) => {
     set((s) => ({
       domain: doc.domain,
       points: doc.points,
       lines: doc.lines,
-      regions: doc.regions,
-      materials: doc.materials,
       faceTypes: doc.faceTypes ?? {},
       selection: emptySelection(),
       pendingLineStart: null,
       fitNonce: s.fitNonce + 1,
     }))
     get().recomputeFaces()
+    // Every mattype actually used by the loaded doc must have a settings entry
+    // so its color resolves; otherwise rehydrated faces render gray. Callers
+    // may pass `discoveredMaterials` (e.g. from parsePoly), but we also walk
+    // faceTypes so the persistence-rehydrate path stays correct on its own.
+    const settings = useSettingsStore.getState()
+    const used = new Set<number>(discoveredMaterials ?? [])
+    for (const spec of Object.values(doc.faceTypes ?? {})) used.add(spec.mattype)
+    for (const m of used) settings.ensureMaterial(m)
   },
 
   toDocument: () => {
@@ -541,8 +460,6 @@ export const useEditorStore = create<EditorState>()(
       domain: s.domain,
       points: s.points,
       lines: s.lines,
-      regions: s.regions,
-      materials: s.materials,
       faceTypes: s.faceTypes,
     }
   },
@@ -552,8 +469,6 @@ export const useEditorStore = create<EditorState>()(
       domain: defaultDomain(),
       points: [],
       lines: [],
-      regions: [],
-      materials: [],
       faceTypes: {},
       faces: [],
       selection: emptySelection(),
@@ -566,16 +481,12 @@ export const useEditorStore = create<EditorState>()(
         domain: s.domain,
         points: s.points,
         lines: s.lines,
-        regions: s.regions,
-        materials: s.materials,
         faceTypes: s.faceTypes,
       }),
       limit: 100,
       equality: (a, b) =>
         a.points === b.points &&
         a.lines === b.lines &&
-        a.regions === b.regions &&
-        a.materials === b.materials &&
         a.faceTypes === b.faceTypes &&
         a.domain === b.domain,
       // A single user action calls set() several times (e.g. addLineByCoords ->

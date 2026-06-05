@@ -1,4 +1,6 @@
 import type { PolyDocument } from '../types'
+import { detectFaces } from './faces'
+import { interiorPoint, type Vec2 } from '../lib/geometry'
 
 /** Format a number for .poly output: shortest round-trippable decimal, no negative zero. */
 function fmt(v: number): string {
@@ -12,18 +14,30 @@ export interface SerializeOptions {
   header?: boolean
 }
 
+export interface SerializeResult {
+  text: string
+  /** Number of detected faces with no entry in `faceTypes` (defaulted to mattype 0). */
+  untypedFaceCount: number
+}
+
 /**
  * Serialize an editor document to a DES3D-compatible 2D `.poly` (PSLG) string.
- * Points are reindexed to contiguous 0-based integers; line endpoints are remapped.
+ * Each detected face emits exactly one region line; untyped faces fall back to
+ * mattype 0 (`untypedFaceCount` reports how many faces took the fallback).
  */
-export function serializePoly(doc: PolyDocument, opts: SerializeOptions = {}): string {
-  const { points, lines, regions, domain } = doc
+export function serializePoly(doc: PolyDocument, opts: SerializeOptions = {}): SerializeResult {
+  const { points, lines, faceTypes, domain } = doc
   const indexOf = new Map<string, number>()
   points.forEach((p, i) => indexOf.set(p.id, i))
 
   const validLines = lines.filter(
     (s) => indexOf.has(s.p0) && indexOf.has(s.p1) && s.p0 !== s.p1,
   )
+
+  // Compute faces inline; each face yields one region line.
+  const faces = detectFaces(points, lines)
+  const pointById = new Map(points.map((p) => [p.id, p]))
+  let untypedFaceCount = 0
 
   const out: string[] = []
   if (opts.header !== false) {
@@ -55,14 +69,23 @@ export function serializePoly(doc: PolyDocument, opts: SerializeOptions = {}): s
   out.push('#### holes ####')
   out.push('0')
 
-  // Regions
+  // Regions: one per detected face.
   out.push('#### regions ####')
   out.push('# nregions')
-  out.push(`${regions.length}`)
+  out.push(`${faces.length}`)
   out.push('# k xk zk mattype size')
-  regions.forEach((r, k) => {
-    out.push(`${k} ${fmt(r.x)} ${fmt(r.z)} ${r.mattype} ${fmt(r.size)}`)
+  faces.forEach((face, k) => {
+    const verts: Vec2[] = face.pointIds
+      .map((pid) => pointById.get(pid))
+      .filter((p): p is NonNullable<typeof p> => Boolean(p))
+      .map((p) => ({ x: p.x, z: p.z }))
+    const seed = interiorPoint(verts)
+    const spec = faceTypes[face.id]
+    const mattype = spec?.mattype ?? 0
+    const size = spec?.size ?? -1
+    if (!spec) untypedFaceCount++
+    out.push(`${k} ${fmt(seed.x)} ${fmt(seed.z)} ${mattype} ${fmt(size)}`)
   })
 
-  return out.join('\n') + '\n'
+  return { text: out.join('\n') + '\n', untypedFaceCount }
 }

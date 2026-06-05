@@ -16,7 +16,7 @@ export function Toolbar() {
     (s) =>
       s.selection.pointIds.length +
         s.selection.lineIds.length +
-        s.selection.regionIds.length >
+        s.selection.faceIds.length >
       0,
   )
 

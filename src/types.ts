@@ -33,29 +33,22 @@ export interface Line {
   bdryFlag: number
 }
 
-/** A region is a seed point inside a closed area plus its material/size attributes. */
-export interface Region {
-  id: string
-  x: number
-  z: number
-  /** Material type, 0-based. */
-  mattype: number
-  /** Max element area; -1 means unlimited. */
-  size: number
-  /** Optional link to the detected face the seed sits inside. */
-  faceId?: string
-}
-
-/** A derived closed face (computed via polygonize); not serialized directly. */
+/**
+ * A derived closed face (computed via polygonize); not serialized directly.
+ * `mattype` / `size` are resolved by `recomputeFaces` from the document's
+ * `faceTypes` map (undefined when the face has no Type assigned).
+ */
 export interface Face {
   id: string
   pointIds: string[]
   lineIds: string[]
   centroid: { x: number; z: number }
   area: number
-  regionId?: string
+  mattype?: number
+  size?: number
 }
 
+/** Display-only material color/label (lives in settingsStore, never in .poly). */
 export interface Material {
   mattype: number
   color: string
@@ -63,15 +56,13 @@ export interface Material {
 }
 
 /**
- * The serializable editor document (derived faces excluded).
- * `faceTypes` maps a deterministic face id to its assigned material/size
- * (used by the upcoming face-keyed storage model; coexists with `regions` in Phase 0a).
+ * The serializable editor document. Faces are derived (excluded) and material
+ * Types are stored as a face-keyed map (`faceId -> { mattype, size }`).
+ * `faceId` follows `face:${sorted-pointIds}` so it survives translations.
  */
 export interface PolyDocument {
   domain: Domain
   points: Point[]
   lines: Line[]
-  regions: Region[]
-  materials: Material[]
   faceTypes: Record<string, { mattype: number; size: number }>
 }

@@ -1,8 +1,20 @@
-import type { PolyDocument } from '../types'
+import type { Line, Material, Point, PolyDocument } from '../types'
+import { detectFaces } from '../poly/faces'
+import { pointInPolygon, type Vec2 } from '../lib/geometry'
+import { useSettingsStore } from '../store/settingsStore'
 
 const KEY_V2 = 'poly-forge:doc:v2'
 const KEY_V1 = 'poly-forge:doc:v1'
 const KEY_V1_BACKUP = 'poly-forge:doc:v1.backup'
+const KEY_V1_ORPHANS = 'poly-forge:doc:v1.orphans'
+
+interface LegacyRegion {
+  id?: string
+  x: number
+  z: number
+  mattype: number
+  size: number
+}
 
 function isValidV2Shape(doc: unknown): doc is PolyDocument {
   if (!doc || typeof doc !== 'object') return false
@@ -10,8 +22,6 @@ function isValidV2Shape(doc: unknown): doc is PolyDocument {
   return (
     Array.isArray(d.points) &&
     Array.isArray(d.lines) &&
-    Array.isArray(d.regions) &&
-    Array.isArray(d.materials) &&
     typeof d.domain === 'object' &&
     d.domain !== null &&
     // Forward-compat: treat missing faceTypes as {}.
@@ -36,7 +46,12 @@ export function loadPersisted(): PolyDocument | null {
       const doc = JSON.parse(rawV2) as unknown
       if (!isValidV2Shape(doc)) return null
       const d = doc as PolyDocument & { faceTypes?: PolyDocument['faceTypes'] }
-      return { ...d, faceTypes: d.faceTypes ?? {} }
+      return {
+        domain: d.domain,
+        points: d.points,
+        lines: d.lines,
+        faceTypes: d.faceTypes ?? {},
+      }
     }
   } catch {
     return null
@@ -59,13 +74,66 @@ export function loadPersisted(): PolyDocument | null {
     ) {
       throw new Error('v1 document is missing required fields')
     }
+    const points = v1.points as Point[]
+    const lines = v1.segments as Line[]
+    const regions = v1.regions as LegacyRegion[]
+    const v1Materials = v1.materials as Material[]
+
+    // Compute v1 faces and map each region onto a face by point-in-polygon.
+    const faces = detectFaces(points, lines)
+    const pointById = new Map(points.map((p) => [p.id, p]))
+    const faceVerts: Vec2[][] = faces.map((f) =>
+      f.pointIds
+        .map((pid) => pointById.get(pid))
+        .filter((p): p is NonNullable<typeof p> => Boolean(p))
+        .map((p) => ({ x: p.x, z: p.z })),
+    )
+
+    const faceTypes: PolyDocument['faceTypes'] = {}
+    const orphans: LegacyRegion[] = []
+    for (const r of regions) {
+      let matched = -1
+      for (let k = 0; k < faces.length; k++) {
+        if (pointInPolygon({ x: r.x, z: r.z }, faceVerts[k])) {
+          matched = k
+          break
+        }
+      }
+      if (matched < 0) {
+        orphans.push(r)
+        continue
+      }
+      faceTypes[faces[matched].id] = { mattype: r.mattype, size: r.size }
+    }
+
+    if (orphans.length > 0) {
+      try {
+        localStorage.setItem(KEY_V1_ORPHANS, JSON.stringify(orphans))
+      } catch {
+        /* stash failure is non-fatal */
+      }
+      console.warn(
+        `poly-forge: v1 -> v2 migration: ${orphans.length} region(s) sit outside every detected face; stashed at localStorage["${KEY_V1_ORPHANS}"] for later recovery.`,
+      )
+    }
+
+    // Merge v1 material color/label entries into settingsStore. Only mattypes
+    // that did not already have a settings entry inherit v1's customization;
+    // existing settings entries are never overwritten.
+    const settings = useSettingsStore.getState()
+    const preexisting = new Set(settings.materials.map((m) => m.mattype))
+    for (const m of v1Materials) {
+      settings.ensureMaterial(m.mattype)
+      if (!preexisting.has(m.mattype)) {
+        settings.setMaterial(m.mattype, { color: m.color, label: m.label })
+      }
+    }
+
     const migrated: PolyDocument = {
       domain: v1.domain as PolyDocument['domain'],
-      points: v1.points as PolyDocument['points'],
-      lines: v1.segments as PolyDocument['lines'],
-      regions: v1.regions as PolyDocument['regions'],
-      materials: v1.materials as PolyDocument['materials'],
-      faceTypes: {},
+      points,
+      lines,
+      faceTypes,
     }
     try {
       localStorage.setItem(KEY_V2, JSON.stringify(migrated))

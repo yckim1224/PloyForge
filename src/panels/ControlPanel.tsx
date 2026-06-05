@@ -7,7 +7,6 @@ import { parsePoly } from '../poly/parse'
 import { AddCard } from './AddCard'
 import { InspectorCard } from './InspectorCard'
 import { BulkCard } from './BulkCard'
-import { MaterialLegend } from './MaterialLegend'
 import { ImportExportCard } from './ImportExportCard'
 
 const MARQUEE_OPTIONS: { id: MarqueeTarget; label: string }[] = [
@@ -73,15 +72,16 @@ export function ControlPanel() {
   const loadDocument = useEditorStore((s) => s.loadDocument)
   const requestFit = useEditorStore((s) => s.requestFit)
   const nPoints = useEditorStore((s) => s.points.length)
-  const nSegments = useEditorStore((s) => s.lines.length)
+  const nLines = useEditorStore((s) => s.lines.length)
   const nFaces = useEditorStore((s) => s.faces.length)
-  const nRegions = useEditorStore((s) => s.regions.length)
   const [sampleId, setSampleId] = useState(SAMPLES[0].id)
 
   const handleLoad = () => {
     const s = SAMPLES.find((x) => x.id === sampleId)
     if (!s) return
-    loadDocument(parsePoly(s.content).doc)
+    const parsed = parsePoly(s.content)
+    loadDocument(parsed.doc, parsed.discoveredMaterials)
+    useEditorStore.temporal.getState().clear()
   }
 
   return (
@@ -133,16 +133,11 @@ export function ControlPanel() {
         <BulkCard />
       </Section>
 
-      <Section title="Materials">
-        <MaterialLegend />
-      </Section>
-
       <Section title="Statistics">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <Stat label="Points" value={nPoints} />
-          <Stat label="Segments" value={nSegments} />
+          <Stat label="Lines" value={nLines} />
           <Stat label="Faces" value={nFaces} />
-          <Stat label="Regions" value={nRegions} />
         </div>
       </Section>
     </div>

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, test } from 'vitest'
 import { useEditorStore } from './editorStore'
+import { useSettingsStore, defaultSettings } from './settingsStore'
 
 const store = () => useEditorStore.getState()
 
 beforeEach(() => {
   store().reset()
+  useSettingsStore.getState().hydrate(defaultSettings())
 })
 
 describe('editorStore', () => {
@@ -27,7 +29,7 @@ describe('editorStore', () => {
 
   test('addLineByCoords auto-creates missing points', () => {
     const res = store().addLineByCoords(0, 0, 100, -50, true)
-    expect(res.segmentId).not.toBeNull()
+    expect(res.lineId).not.toBeNull()
     expect(store().points.length).toBe(2)
     expect(store().lines.length).toBe(1)
   })
@@ -35,7 +37,7 @@ describe('editorStore', () => {
   test('addLineByCoords without auto-create fails cleanly on a missing point', () => {
     store().addPoint(0, 0)
     const res = store().addLineByCoords(0, 0, 100, -50, false)
-    expect(res.segmentId).toBeNull()
+    expect(res.lineId).toBeNull()
     expect(res.error).toBeTruthy()
     expect(store().points.length).toBe(1)
     expect(store().lines.length).toBe(0)
@@ -130,7 +132,7 @@ describe('editorStore', () => {
     expect(store().lines[0].bdryFlag).toBe(16)
   })
 
-  test('applyFaceMaterial creates one region at the face centroid, then updates it', () => {
+  test('setFaceType writes a faceTypes entry and ensures the material color', () => {
     store().setDomain({ xmin: 0, xmax: 100, zmin: -100, zmax: 0 })
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)
@@ -143,38 +145,20 @@ describe('editorStore', () => {
     expect(store().faces.length).toBe(1)
     const faceId = store().faces[0].id
 
-    store().applyFaceMaterial([faceId], { mattype: 3, size: 5 })
-    expect(store().regions.length).toBe(1)
-    expect(store().regions[0]).toMatchObject({ mattype: 3, size: 5 })
-    expect(store().regions[0].x).toBeCloseTo(50, 6)
-    expect(store().regions[0].z).toBeCloseTo(-50, 6)
+    store().setFaceType(faceId, 3, 5)
+    expect(store().faceTypes[faceId]).toEqual({ mattype: 3, size: 5 })
+    expect(store().faces[0].mattype).toBe(3)
+    expect(store().faces[0].size).toBe(5)
+    // Settings store now contains a color entry for mattype 3.
+    expect(useSettingsStore.getState().materials.some((m) => m.mattype === 3)).toBe(true)
 
-    // Re-applying edits the same region rather than creating a duplicate.
-    store().applyFaceMaterial([faceId], { mattype: 1 })
-    expect(store().regions.length).toBe(1)
-    expect(store().regions[0].mattype).toBe(1)
+    // Re-applying updates the same entry rather than duplicating.
+    store().setFaceType(faceId, 1)
+    expect(store().faceTypes[faceId]).toEqual({ mattype: 1, size: -1 })
+    expect(store().faces[0].mattype).toBe(1)
   })
 
-  test('drawing a line across a face splits it into two faces (T-junction noding)', () => {
-    // Build a closed square -> 1 face.
-    const a = store().addPoint(0, 0)
-    const b = store().addPoint(100, 0)
-    const c = store().addPoint(100, -100)
-    const d = store().addPoint(0, -100)
-    store().addLine(a, b) // top edge
-    store().addLine(b, c)
-    store().addLine(c, d) // bottom edge
-    store().addLine(d, a)
-    expect(store().faces.length).toBe(1)
-
-    // Draw a vertical line whose endpoints land mid-edge (new points on the
-    // top and bottom edges). This must split the square into two faces.
-    const res = store().addLineByCoords(50, 0, 50, -100, true)
-    expect(res.segmentId).not.toBeNull()
-    expect(store().faces.length).toBe(2)
-  })
-
-  test('removeOrphanRegions drops seeds that fall outside every face', () => {
+  test('clearFaceType removes the faceTypes entry and the face goes back to untyped', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)
     const c = store().addPoint(100, -100)
@@ -183,12 +167,41 @@ describe('editorStore', () => {
     store().addLine(b, c)
     store().addLine(c, d)
     store().addLine(d, a)
-    store().addRegion(50, -50, 0) // inside the face
-    store().addRegion(999, 999, 1) // outside every face
-    expect(store().regions.length).toBe(2)
-    store().removeOrphanRegions()
-    expect(store().regions.length).toBe(1)
-    expect(store().regions[0]).toMatchObject({ x: 50, z: -50 })
+    const fid = store().faces[0].id
+    store().setFaceType(fid, 2)
+    expect(store().faces[0].mattype).toBe(2)
+    store().clearFaceType(fid)
+    expect(store().faceTypes[fid]).toBeUndefined()
+    expect(store().faces[0].mattype).toBeUndefined()
+  })
+
+  test('drawing a line across a face splits it; both children are untyped (A-13)', () => {
+    // Build a closed square -> 1 face.
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    store().addLine(a, b)
+    store().addLine(b, c)
+    store().addLine(c, d)
+    store().addLine(d, a)
+    expect(store().faces.length).toBe(1)
+    const parentId = store().faces[0].id
+    store().setFaceType(parentId, 9)
+    expect(store().faces[0].mattype).toBe(9)
+
+    // Draw a vertical line whose endpoints land mid-edge (new points on the
+    // top and bottom edges). This must split the square into two faces.
+    const res = store().addLineByCoords(50, 0, 50, -100, true)
+    expect(res.lineId).not.toBeNull()
+    expect(store().faces.length).toBe(2)
+    // Children have different faceIds from the parent, so both are untyped.
+    for (const f of store().faces) {
+      expect(f.id).not.toBe(parentId)
+      expect(f.mattype).toBeUndefined()
+    }
+    // The parent's faceTypes entry is preserved (stale) for resurrection.
+    expect(store().faceTypes[parentId]).toEqual({ mattype: 9, size: -1 })
   })
 
   test('nudgeSelection moves selected points by one grid step (10x with Shift)', () => {
@@ -214,15 +227,12 @@ describe('editorStore', () => {
     expect(store().points.find((p) => p.id === b)).toMatchObject({ x: 200, z: -100 })
   })
 
-  test('nudgeSelection moves a region seed and is a no-op without a selection', () => {
+  test('nudgeSelection is a no-op without a selection', () => {
     store().setDomain({ gridSpacing: 100 })
-    const r = store().addRegion(50, -50, 0)
-    store().selectSingle('region', r)
-    store().nudgeSelection(1, 0, false)
-    expect(store().regions[0]).toMatchObject({ x: 150, z: -50 })
+    const a = store().addPoint(0, 0)
     store().clearSelection()
     store().nudgeSelection(1, 0, false)
-    expect(store().regions[0]).toMatchObject({ x: 150, z: -50 })
+    expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 0, z: 0 })
   })
 
   test('addLine nodes a new segment drawn through an existing interior point', () => {
@@ -247,7 +257,7 @@ describe('editorStore', () => {
     expect(store().lines.length).toBe(2)
   })
 
-  test('nudgeSelection carries a region seed enclosed by a nudged face', () => {
+  test('nudgeSelection preserves a face Type when its vertices translate together (A-22)', () => {
     store().setDomain({ gridSpacing: 10, xmin: 0, xmax: 200, zmin: -200, zmax: 0 })
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)
@@ -258,29 +268,54 @@ describe('editorStore', () => {
     store().addLine(c, d)
     store().addLine(d, a)
     const faceId = store().faces[0].id
-    store().applyFaceMaterial([faceId], { mattype: 1 })
-    expect(store().regions.length).toBe(1)
-    const seed0 = { ...store().regions[0] }
+    store().setFaceType(faceId, 1)
+    expect(store().faceTypes[faceId]?.mattype).toBe(1)
     store().selectSingle('face', faceId)
     store().nudgeSelection(1, 0, false) // +x by one grid step (10)
-    expect(store().regions[0].x).toBeCloseTo(seed0.x + 10, 6)
-    expect(store().regions[0].z).toBeCloseTo(seed0.z, 6)
-    // The seed still sits inside the moved face (material assignment preserved).
-    expect(store().regions[0].id).toBe(seed0.id)
+    // The face id is sorted-pointIds, which is unchanged by translation, so
+    // the face survives and keeps its Type without any seed-follow code.
+    expect(store().faces[0].id).toBe(faceId)
+    expect(store().faces[0].mattype).toBe(1)
+    expect(store().faceTypes[faceId]?.mattype).toBe(1)
   })
 
-  test('removeOrphanRegions never removes the last region (nregions>=1 floor)', () => {
-    store().addRegion(999, 999, 0) // outside any face (there are none)
-    expect(store().regions.length).toBe(1)
-    store().removeOrphanRegions()
-    expect(store().regions.length).toBe(1)
+  test('deleting a face boundary then undoing restores the Type (A-14)', async () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    store().addLine(a, b)
+    store().addLine(b, c)
+    store().addLine(c, d)
+    const closing = store().addLine(d, a)!
+    const fid = store().faces[0].id
+    store().setFaceType(fid, 7)
+    expect(store().faces[0].mattype).toBe(7)
+
+    // Clear undo history so we measure exactly the next step.
+    useEditorStore.temporal.getState().clear()
+    await Promise.resolve()
+    const before = useEditorStore.temporal.getState().pastStates.length
+
+    // Remove the closing line: the face opens, no faceId matches; entry stays stale.
+    store().removeLines([closing])
+    expect(store().faces.length).toBe(0)
+    expect(store().faceTypes[fid]).toEqual({ mattype: 7, size: -1 })
+    expect(useEditorStore.temporal.getState().pastStates.length).toBe(before + 1)
+
+    // Undo: the face reforms with the same id and its Type resurrects.
+    useEditorStore.temporal.getState().undo()
+    store().recomputeFaces()
+    expect(store().faces.length).toBe(1)
+    expect(store().faces[0].id).toBe(fid)
+    expect(store().faces[0].mattype).toBe(7)
   })
 
   test('addLineByCoords rejects a duplicate segment without leaving orphan points', () => {
     store().addLineByCoords(0, 0, 100, 0, true)
     const pointCount = store().points.length
     const res = store().addLineByCoords(0, 0, 100, 0, true)
-    expect(res.segmentId).toBeNull()
+    expect(res.lineId).toBeNull()
     expect(res.error).toBe('That segment already exists.')
     expect(store().points.length).toBe(pointCount) // no orphan auto-created point
     expect(store().lines.length).toBe(1)
@@ -299,17 +334,61 @@ describe('editorStore', () => {
   test('toDocument / loadDocument round-trips through the store', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
     store().addLine(a, b, 1)
-    store().addRegion(50, -10, 2, -1)
+    store().addLine(b, c)
+    store().addLine(c, d)
+    store().addLine(d, a)
+    const fid = store().faces[0].id
+    store().setFaceType(fid, 2)
     const doc = store().toDocument()
 
     store().reset()
     expect(store().points.length).toBe(0)
 
+    store().loadDocument(doc, [2])
+    expect(store().points.length).toBe(4)
+    expect(store().lines.length).toBe(4)
+    expect(store().faces[0].mattype).toBe(2)
+    expect(useSettingsStore.getState().materials.some((m) => m.mattype === 2)).toBe(true)
+  })
+
+  test('loadDocument + temporal.clear() leaves no undoable steps (import contract)', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().addLine(a, b)
+    const doc = store().toDocument()
+
+    store().reset()
+    store().addPoint(10, 10) // some user history before "import"
+    expect(useEditorStore.temporal.getState().pastStates.length).toBeGreaterThan(0)
+
     store().loadDocument(doc)
-    expect(store().points.length).toBe(2)
-    expect(store().lines.length).toBe(1)
-    expect(store().regions.length).toBe(1)
-    expect(store().materials.some((m) => m.mattype === 2)).toBe(true)
+    useEditorStore.temporal.getState().clear()
+    expect(useEditorStore.temporal.getState().pastStates.length).toBe(0)
+  })
+
+  test('loadDocument auto-ensures materials for mattypes used in faceTypes', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    store().addLine(a, b)
+    store().addLine(b, c)
+    store().addLine(c, d)
+    store().addLine(d, a)
+    const fid = store().faces[0].id
+    store().setFaceType(fid, 7)
+    const doc = store().toDocument()
+
+    useSettingsStore.getState().hydrate(defaultSettings())
+    store().reset()
+    expect(useSettingsStore.getState().materials.some((m) => m.mattype === 7)).toBe(false)
+
+    // Persistence rehydrate path does not pass discoveredMaterials.
+    store().loadDocument(doc)
+    expect(store().faces[0].mattype).toBe(7)
+    expect(useSettingsStore.getState().materials.some((m) => m.mattype === 7)).toBe(true)
   })
 })

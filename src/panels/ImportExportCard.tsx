@@ -17,15 +17,23 @@ import { validateDocument, type ValidationIssue } from '../poly/validate'
 export function ImportExportCard() {
   const toDocument = useEditorStore((s) => s.toDocument)
   const loadDocument = useEditorStore((s) => s.loadDocument)
-  const nRegions = useEditorStore((s) => s.regions.length)
+  const nFaces = useEditorStore((s) => s.faces.length)
   const fileRef = useRef<HTMLInputElement>(null)
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null)
   const [warnings, setWarnings] = useState<string[]>([])
   const [importError, setImportError] = useState<string | null>(null)
+  const [exportWarning, setExportWarning] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const onExport = () => {
-    const text = serializePoly(toDocument())
+    const { text, untypedFaceCount } = serializePoly(toDocument())
+    if (untypedFaceCount > 0) {
+      setExportWarning(
+        `${untypedFaceCount} face(s) have no Type assigned (defaulted to mattype 0).`,
+      )
+    } else {
+      setExportWarning(null)
+    }
     const blob = new Blob([text], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -37,7 +45,15 @@ export function ImportExportCard() {
 
   const onCopy = async () => {
     try {
-      await navigator.clipboard.writeText(serializePoly(toDocument()))
+      const { text, untypedFaceCount } = serializePoly(toDocument())
+      if (untypedFaceCount > 0) {
+        setExportWarning(
+          `${untypedFaceCount} face(s) have no Type assigned (defaulted to mattype 0).`,
+        )
+      } else {
+        setExportWarning(null)
+      }
+      await navigator.clipboard.writeText(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -51,10 +67,14 @@ export function ImportExportCard() {
     try {
       const text = await file.text()
       const result = parsePoly(text)
-      loadDocument(result.doc)
+      loadDocument(result.doc, result.discoveredMaterials)
+      // File import replaces the entire document; undoing into a half-imported
+      // state would surprise users, so it sits outside the undo history.
+      useEditorStore.temporal.getState().clear()
       setWarnings(result.warnings)
       setImportError(null)
       setIssues(null)
+      setExportWarning(null)
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Could not parse the .poly file.')
       setWarnings([])
@@ -103,11 +123,18 @@ export function ImportExportCard() {
         </p>
       )}
 
-      {nRegions === 0 && (
+      {nFaces === 0 && (
         <p className="flex items-start gap-1.5 rounded-md bg-amber-50 p-2 text-xs text-amber-700">
           <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-          No regions yet. DES3D requires at least one region — assign a material to a face before
-          meshing.
+          No closed face detected. DES3D requires at least one region — draw a closed loop of
+          segments so a face is detected.
+        </p>
+      )}
+
+      {exportWarning && (
+        <p className="flex items-start gap-1.5 rounded-md bg-amber-50 p-2 text-xs text-amber-700">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          {exportWarning}
         </p>
       )}
 

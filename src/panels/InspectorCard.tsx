@@ -1,11 +1,10 @@
 import { Button } from '@heroui/react'
 import { Wand2 } from 'lucide-react'
 import { useEditorStore } from '../store/editorStore'
+import { useSettingsStore } from '../store/settingsStore'
 import { NumberValue } from '../components/fields'
 import { BOUNDARY_OPTIONS_2D, boundaryColor } from '../poly/boundary'
-import { pointInPolygon, type Vec2 } from '../lib/geometry'
 import { materialColor } from '../constants/materials'
-import type { Region } from '../types'
 
 const selectClass =
   'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm focus:border-violet-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100'
@@ -108,30 +107,29 @@ function LineInspector() {
   )
 }
 
-function regionForFace(verts: Vec2[], regions: Region[]): Region | undefined {
-  return regions.find((r) => pointInPolygon({ x: r.x, z: r.z }, verts))
-}
-
 function FaceInspector() {
   const faceIds = useEditorStore((s) => s.selection.faceIds)
   const faces = useEditorStore((s) => s.faces)
-  const points = useEditorStore((s) => s.points)
-  const regions = useEditorStore((s) => s.regions)
-  const applyFaceMaterial = useEditorStore((s) => s.applyFaceMaterial)
+  const setFaceType = useEditorStore((s) => s.setFaceType)
+  const materials = useSettingsStore((s) => s.materials)
 
-  const byId = new Map(points.map((p) => [p.id, p]))
   const single = faceIds.length === 1 ? faces.find((f) => f.id === faceIds[0]) : undefined
-  let mattype = 0
-  let size = -1
-  if (single) {
-    const verts = single.pointIds
-      .map((id) => byId.get(id))
-      .filter((p): p is NonNullable<typeof p> => Boolean(p))
-      .map((p) => ({ x: p.x, z: p.z }))
-    const region = regionForFace(verts, regions)
-    if (region) {
-      mattype = region.mattype
-      size = region.size
+  const mattype = single?.mattype ?? 0
+  const size = single?.size ?? -1
+
+  const colorFor = (m: number) =>
+    materials.find((entry) => entry.mattype === m)?.color ?? materialColor(m)
+
+  const applyAll = (patch: { mattype?: number; size?: number }) => {
+    for (const fid of faceIds) {
+      const face = faces.find((f) => f.id === fid)
+      const currentMattype = face?.mattype ?? 0
+      const currentSize = face?.size ?? -1
+      setFaceType(
+        fid,
+        patch.mattype ?? currentMattype,
+        patch.size ?? currentSize,
+      )
     }
   }
 
@@ -146,64 +144,27 @@ function FaceInspector() {
             label="Material type (mattype)"
             value={mattype}
             step="1"
-            onCommit={(v) => applyFaceMaterial(faceIds, { mattype: Math.max(0, Math.round(v)) })}
+            onCommit={(v) => applyAll({ mattype: Math.max(0, Math.round(v)) })}
           />
         </div>
-        <Swatch color={materialColor(mattype)} />
+        <Swatch color={colorFor(mattype)} />
       </div>
-      <SizeControl value={size} onCommit={(v) => applyFaceMaterial(faceIds, { size: v })} />
+      <SizeControl value={size} onCommit={(v) => applyAll({ size: v })} />
       <p className="text-xs text-neutral-400">
-        Assigning a material places a region seed at the face center.
+        Assigning a Type records the face's material in the document's face-keyed map.
       </p>
     </div>
   )
 }
 
-function RegionInspector() {
-  const regionIds = useEditorStore((s) => s.selection.regionIds)
-  const regions = useEditorStore((s) => s.regions)
-  const updateRegion = useEditorStore((s) => s.updateRegion)
-  const applyAll = (patch: { mattype?: number; size?: number }) =>
-    regionIds.forEach((id) => updateRegion(id, patch))
-
-  const single = regionIds.length === 1 ? regions.find((r) => r.id === regionIds[0]) : undefined
-
-  return (
-    <div className="flex flex-col gap-2">
-      {regionIds.length > 1 && (
-        <p className="text-xs text-neutral-500">{regionIds.length} regions selected.</p>
-      )}
-      {single && (
-        <div className="grid grid-cols-2 gap-2">
-          <NumberValue label="x (m)" value={single.x} onCommit={(v) => updateRegion(single.id, { x: v })} />
-          <NumberValue label="z (m)" value={single.z} onCommit={(v) => updateRegion(single.id, { z: v })} />
-        </div>
-      )}
-      <div className="flex items-end gap-2">
-        <div className="flex-1">
-          <NumberValue
-            label="Material type (mattype)"
-            value={single ? single.mattype : 0}
-            step="1"
-            onCommit={(v) => applyAll({ mattype: Math.max(0, Math.round(v)) })}
-          />
-        </div>
-        <Swatch color={materialColor(single ? single.mattype : 0)} />
-      </div>
-      <SizeControl value={single ? single.size : -1} onCommit={(v) => applyAll({ size: v })} />
-    </div>
-  )
-}
-
 export function InspectorCard() {
-  const { pointIds, lineIds, faceIds, regionIds } = useEditorStore((s) => s.selection)
+  const { pointIds, lineIds, faceIds } = useEditorStore((s) => s.selection)
   if (pointIds.length) return <PointInspector />
   if (lineIds.length) return <LineInspector />
   if (faceIds.length) return <FaceInspector />
-  if (regionIds.length) return <RegionInspector />
   return (
     <p className="text-xs text-neutral-400">
-      Select a point, segment, face, or region to edit its properties.
+      Select a point, segment, or face to edit its properties.
     </p>
   )
 }

@@ -1,7 +1,7 @@
 import type { PolyDocument } from '../types'
 import { isSingleBitFlag } from './boundary'
 import { detectFaces } from './faces'
-import { pointInPolygon, type Vec2 } from '../lib/geometry'
+import type { Vec2 } from '../lib/geometry'
 
 export interface ValidationIssue {
   level: 'error' | 'warning'
@@ -24,6 +24,9 @@ function properlyCross(a0: Vec2, a1: Vec2, b0: Vec2, b1: Vec2): boolean {
 /**
  * Validate a document against DES3D `.poly` reader expectations.
  * Returns errors (would break meshing) and warnings (likely mistakes).
+ *
+ * Note: mattype validation now happens at write-time via `setFaceType`
+ * (mattype lives in the `faceTypes` map, not on a standalone region record).
  */
 export function validateDocument(doc: PolyDocument): ValidationIssue[] {
   const issues: ValidationIssue[] = []
@@ -32,13 +35,6 @@ export function validateDocument(doc: PolyDocument): ValidationIssue[] {
   if (doc.points.length === 0) issues.push({ level: 'warning', message: 'No points defined.' })
   if (doc.lines.length === 0)
     issues.push({ level: 'warning', message: 'No segments defined.' })
-  // DES3D fatally rejects nregions <= 0 (mesh.cxx new_mesh_from_polyfile).
-  if (doc.regions.length === 0)
-    issues.push({
-      level: 'error',
-      message:
-        'DES3D requires at least one region (nregions >= 1). Assign a material to a face to add a region seed.',
-    })
 
   // Boundary flags must be a single bit; endpoints must be valid; no self-loops.
   for (const s of doc.lines) {
@@ -55,32 +51,15 @@ export function validateDocument(doc: PolyDocument): ValidationIssue[] {
     }
   }
 
-  // Region material types must be non-negative.
-  for (const r of doc.regions) {
-    if (r.mattype < 0 || !Number.isInteger(r.mattype)) {
-      issues.push({
-        level: 'error',
-        message: `Region mattype must be a non-negative integer (got ${r.mattype}).`,
-      })
-    }
-  }
-
-  // Each region seed should fall inside a closed face.
+  // DES3D fatally rejects nregions <= 0; serialize emits one region per detected
+  // face, so a document with points but no closed face would write nregions=0.
   const faces = detectFaces(doc.points, doc.lines)
-  const faceVerts = faces.map((f) =>
-    f.pointIds
-      .map((id) => byId.get(id))
-      .filter((p): p is NonNullable<typeof p> => Boolean(p))
-      .map((p) => ({ x: p.x, z: p.z })),
-  )
-  for (const r of doc.regions) {
-    const inside = faceVerts.some((verts) => pointInPolygon({ x: r.x, z: r.z }, verts))
-    if (!inside) {
-      issues.push({
-        level: 'warning',
-        message: `Region seed (${r.x}, ${r.z}) is not inside any closed face; TetGen/Triangle may misassign it.`,
-      })
-    }
+  if (doc.points.length > 0 && faces.length === 0) {
+    issues.push({
+      level: 'error',
+      message:
+        'No closed face detected. Draw at least one closed loop with segments so DES3D has a region to mesh.',
+    })
   }
 
   // Crossing internal segments break polygonize and confuse meshing.

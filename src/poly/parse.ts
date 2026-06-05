@@ -1,11 +1,21 @@
-import type { Line, Material, Point, PolyDocument, Region } from '../types'
+import type { Line, Point, PolyDocument } from '../types'
 import { uid } from '../lib/id'
 import { inferDomain } from '../lib/defaults'
-import { materialColor } from '../constants/materials'
+import { detectFaces } from './faces'
+import { pointInPolygon, type Vec2 } from '../lib/geometry'
 
 export interface ParseResult {
   doc: PolyDocument
   warnings: string[]
+  /** Unique sorted mattypes encountered in parsed region records. */
+  discoveredMaterials: number[]
+}
+
+interface ParsedRegion {
+  x: number
+  z: number
+  mattype: number
+  size: number
 }
 
 /** Split into whitespace-token rows, stripping `#` comments and blank lines. */
@@ -20,14 +30,10 @@ function tokenizeRows(text: string): string[][] {
     .map((l) => l.split(/\s+/))
 }
 
-function inferMaterials(regions: Region[]): Material[] {
-  const types = [...new Set(regions.map((r) => r.mattype))].sort((a, b) => a - b)
-  return types.map((mattype) => ({ mattype, color: materialColor(mattype) }))
-}
-
 /**
  * Parse a DES3D 2D `.poly` (PSLG) file. Tolerant of comments, inline comments,
- * extra blank lines, and scientific notation. Returns the document plus warnings.
+ * extra blank lines, and scientific notation. Returns the document plus warnings
+ * and the mattypes discovered in region records (for settings hydration).
  */
 export function parsePoly(text: string): ParseResult {
   const warnings: string[] = []
@@ -99,8 +105,8 @@ export function parsePoly(text: string): ParseResult {
     }
   }
 
-  // Regions (optional)
-  const regions: Region[] = []
+  // Regions (optional). Stored transiently for mapping into faceTypes below.
+  const parsedRegions: ParsedRegion[] = []
   if (i < rows.length) {
     const regHeader = next()
     const nreg = parseInt(regHeader[0], 10)
@@ -120,8 +126,7 @@ export function parsePoly(text: string): ParseResult {
         }
         const mattype = parseInt(t[3], 10)
         const size = parseFloat(t[4])
-        regions.push({
-          id: uid('r'),
+        parsedRegions.push({
           x,
           z,
           mattype: Number.isFinite(mattype) ? mattype : 0,
@@ -131,10 +136,47 @@ export function parsePoly(text: string): ParseResult {
     }
   }
 
+  // Map each parsed region onto a detected face via point-in-polygon. Regions
+  // that match no face are dropped (with a warning); multiple regions inside
+  // the same face -> last one wins (plus warning).
+  const faces = detectFaces(points, lines)
+  const pointById = new Map(points.map((p) => [p.id, p]))
+  const faceVerts: Vec2[][] = faces.map((f) =>
+    f.pointIds
+      .map((pid) => pointById.get(pid))
+      .filter((p): p is NonNullable<typeof p> => Boolean(p))
+      .map((p) => ({ x: p.x, z: p.z })),
+  )
+  const faceTypes: PolyDocument['faceTypes'] = {}
+  for (const r of parsedRegions) {
+    let matchedIndex = -1
+    for (let k = 0; k < faces.length; k++) {
+      if (pointInPolygon({ x: r.x, z: r.z }, faceVerts[k])) {
+        matchedIndex = k
+        break
+      }
+    }
+    if (matchedIndex < 0) {
+      warnings.push(`Region @ (${r.x}, ${r.z}) is not inside any detected face; dropped.`)
+      continue
+    }
+    const face = faces[matchedIndex]
+    if (face.id in faceTypes) {
+      warnings.push(
+        `Multiple regions land in the same face (id=${face.id}); the last record (mattype=${r.mattype}) wins.`,
+      )
+    }
+    faceTypes[face.id] = { mattype: r.mattype, size: r.size }
+  }
+
+  const discoveredMaterials = [...new Set(parsedRegions.map((r) => r.mattype))].sort(
+    (a, b) => a - b,
+  )
+
   const domain = inferDomain(points)
-  const materials = inferMaterials(regions)
   return {
-    doc: { domain, points, lines, regions, materials, faceTypes: {} },
+    doc: { domain, points, lines, faceTypes },
     warnings,
+    discoveredMaterials,
   }
 }

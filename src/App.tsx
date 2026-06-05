@@ -6,6 +6,12 @@ import { EditorStage } from './canvas/EditorStage'
 import { ControlPanel } from './panels/ControlPanel'
 import { redoEdit, undoEdit, useEditorStore } from './store/editorStore'
 import { loadPersisted, savePersisted } from './lib/persistence'
+import {
+  loadSettings,
+  saveSettings,
+  useSettingsStore,
+  type AppSettings,
+} from './store/settingsStore'
 import { applyTheme, getTheme, type Theme } from './lib/theme'
 
 function IconButton({
@@ -73,20 +79,23 @@ function AppBar() {
 }
 
 function App() {
-  // Apply the saved theme and hydrate persisted geometry on first mount.
+  // Apply the saved theme and hydrate persisted geometry/settings on first mount.
   useEffect(() => {
     applyTheme(getTheme())
+
+    const persistedSettings = loadSettings()
+    if (persistedSettings) useSettingsStore.getState().hydrate(persistedSettings)
+
     const doc = loadPersisted()
     if (doc) {
       useEditorStore.getState().loadDocument(doc)
       useEditorStore.temporal.getState().clear()
     }
-    const unsub = useEditorStore.subscribe((s, prev) => {
+
+    const unsubDoc = useEditorStore.subscribe((s, prev) => {
       if (
         s.points !== prev.points ||
         s.lines !== prev.lines ||
-        s.regions !== prev.regions ||
-        s.materials !== prev.materials ||
         s.faceTypes !== prev.faceTypes ||
         s.domain !== prev.domain
       ) {
@@ -94,13 +103,32 @@ function App() {
           domain: s.domain,
           points: s.points,
           lines: s.lines,
-          regions: s.regions,
-          materials: s.materials,
           faceTypes: s.faceTypes,
         })
       }
     })
-    return unsub
+
+    const unsubSettings = useSettingsStore.subscribe((s, prev) => {
+      if (
+        s.grid !== prev.grid ||
+        s.point !== prev.point ||
+        s.line !== prev.line ||
+        s.materials !== prev.materials
+      ) {
+        const snapshot: AppSettings = {
+          grid: s.grid,
+          point: s.point,
+          line: s.line,
+          materials: s.materials,
+        }
+        saveSettings(snapshot)
+      }
+    })
+
+    return () => {
+      unsubDoc()
+      unsubSettings()
+    }
   }, [])
 
   return (

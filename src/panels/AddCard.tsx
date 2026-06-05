@@ -61,7 +61,7 @@ export function AddCard() {
     const res = addLineByCoords(x1, z1, x2, z2, auto)
     if (res.error) {
       setLineFb({ kind: 'err', text: res.error })
-    } else if (res.segmentId === null) {
+    } else if (res.lineId === null) {
       setLineFb({ kind: 'warn', text: 'Endpoints coincide; no line added.' })
     } else {
       const outside = !inDomain(domain, x1, z1) || !inDomain(domain, x2, z2)

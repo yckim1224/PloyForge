@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Circle, Layer, Line, Rect, Stage } from 'react-konva'
 import type Konva from 'konva'
-import type { Region } from '../types'
 import { redoEdit, undoEdit, useEditorStore } from '../store/editorStore'
+import { useSettingsStore } from '../store/settingsStore'
 import { materialColor } from '../constants/materials'
-import { boundaryColor, boundaryDash } from '../poly/boundary'
-import { pointInPolygon, type Vec2 } from '../lib/geometry'
+import { type Vec2 } from '../lib/geometry'
 import { Toolbar } from '../components/Toolbar'
 import { computeGridLines } from './grid'
 import {
@@ -25,10 +24,7 @@ import {
   type ScreenRect,
 } from './selection'
 
-const POINT_RADIUS = 4
-const SEGMENT_WIDTH = 2
 const HIT_PX = 12
-const SELECT = '#7c3aed' // violet-600
 const HUD_EMPTY = 'x —   z —'
 
 function fmtMeters(v: number): string {
@@ -69,13 +65,16 @@ export function EditorStage() {
   const domain = useEditorStore((s) => s.domain)
   const points = useEditorStore((s) => s.points)
   const lines = useEditorStore((s) => s.lines)
-  const regions = useEditorStore((s) => s.regions)
   const faces = useEditorStore((s) => s.faces)
-  const materials = useEditorStore((s) => s.materials)
   const selection = useEditorStore((s) => s.selection)
   const tool = useEditorStore((s) => s.tool)
   const marqueeTarget = useEditorStore((s) => s.marqueeTarget)
   const pendingLineStart = useEditorStore((s) => s.pendingLineStart)
+
+  const gridSettings = useSettingsStore((s) => s.grid)
+  const pointSettings = useSettingsStore((s) => s.point)
+  const lineSettings = useSettingsStore((s) => s.line)
+  const materials = useSettingsStore((s) => s.materials)
 
   const addPoint = useEditorStore((s) => s.addPoint)
   const addLine = useEditorStore((s) => s.addLine)
@@ -325,11 +324,9 @@ export function EditorStage() {
           ? 'point'
           : name === 'line'
             ? 'line'
-            : name === 'region'
-              ? 'region'
-              : name === 'face'
-                ? 'face'
-                : null
+            : name === 'face'
+              ? 'face'
+              : null
       const additive = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey
       if (kind) {
         if (additive) toggleSelect(kind, id)
@@ -361,7 +358,6 @@ export function EditorStage() {
 
   const selPoints = new Set(selection.pointIds)
   const selLines = new Set(selection.lineIds)
-  const selRegions = new Set(selection.regionIds)
   const selFaces = new Set(selection.faceIds)
 
   const faceVerts = (pointIds: string[]): Vec2[] =>
@@ -370,29 +366,10 @@ export function EditorStage() {
       .filter((p): p is NonNullable<typeof p> => Boolean(p))
       .map((p) => ({ x: p.x, z: p.z }))
 
-  // Region<->face containment is independent of the viewport, so derive it once
-  // per geometry change instead of on every pan/zoom render frame.
-  const { faceRegion, orphanRegionIds } = useMemo(() => {
-    const ptById = new Map(points.map((p) => [p.id, p]))
-    const vertsOf = (pointIds: string[]): Vec2[] =>
-      pointIds
-        .map((pid) => ptById.get(pid))
-        .filter((p): p is NonNullable<typeof p> => Boolean(p))
-        .map((p) => ({ x: p.x, z: p.z }))
-    const faceVertsList = faces.map((f) => vertsOf(f.pointIds))
-    const fr = new Map<string, Region>()
-    faces.forEach((f, i) => {
-      const r = regions.find((rg) => pointInPolygon({ x: rg.x, z: rg.z }, faceVertsList[i]))
-      if (r) fr.set(f.id, r)
-    })
-    const orphans = new Set<string>()
-    for (const r of regions) {
-      if (!faceVertsList.some((verts) => pointInPolygon({ x: r.x, z: r.z }, verts))) {
-        orphans.add(r.id)
-      }
-    }
-    return { faceRegion: fr, orphanRegionIds: orphans }
-  }, [faces, regions, points])
+  const lineStyleFor = (flag: number) => {
+    const key = flag as 0 | 1 | 2 | 16 | 32
+    return lineSettings.styleByFlag[key] ?? { color: '#a855f7', dash: [] }
+  }
 
   const domTL = worldToScreen(vp, domain.xmin, domain.zmax)
   const domBR = worldToScreen(vp, domain.xmax, domain.zmin)
@@ -431,27 +408,29 @@ export function EditorStage() {
           }}
           onClick={handleClick}
         >
-          <Layer listening={false}>
-            {gridLines.map((l, i) => (
-              <Line
-                key={i}
-                points={l.points}
-                stroke={l.axis ? '#9ca3af' : '#e5e7eb'}
-                strokeWidth={l.axis ? 1.2 : 1}
+          {gridSettings.show && (
+            <Layer listening={false}>
+              {gridLines.map((l, i) => (
+                <Line
+                  key={i}
+                  points={l.points}
+                  stroke={l.axis ? '#9ca3af' : gridSettings.lineColor}
+                  strokeWidth={l.axis ? Math.max(1.2, gridSettings.lineWidth) : gridSettings.lineWidth}
+                />
+              ))}
+              <Rect
+                x={domTL.sx}
+                y={domTL.sy}
+                width={domBR.sx - domTL.sx}
+                height={domBR.sy - domTL.sy}
+                stroke="#a855f7"
+                strokeWidth={1.5}
+                dash={[4, 4]}
               />
-            ))}
-            <Rect
-              x={domTL.sx}
-              y={domTL.sy}
-              width={domBR.sx - domTL.sx}
-              height={domBR.sy - domTL.sy}
-              stroke="#a855f7"
-              strokeWidth={1.5}
-              dash={[4, 4]}
-            />
-          </Layer>
+            </Layer>
+          )}
 
-          {/* Faces, filled by the material of the region seed inside them. */}
+          {/* Faces, filled by the Type from `faceTypes` (gray when unassigned). */}
           <Layer>
             {faces.map((f) => {
               const verts = faceVerts(f.pointIds)
@@ -460,9 +439,8 @@ export function EditorStage() {
                 const s = worldToScreen(vp, v.x, v.z)
                 return [s.sx, s.sy]
               })
-              const region = faceRegion.get(f.id)
               const selected = selFaces.has(f.id)
-              const fill = region ? colorOf(region.mattype) : '#cbd5e1'
+              const fill = f.mattype !== undefined ? colorOf(f.mattype) : '#cbd5e1'
               return (
                 <Line
                   key={f.id}
@@ -472,7 +450,7 @@ export function EditorStage() {
                   closed
                   fill={fill}
                   opacity={selected ? 0.5 : 0.22}
-                  stroke={selected ? SELECT : 'transparent'}
+                  stroke={selected ? pointSettings.selectedColor : 'transparent'}
                   strokeWidth={selected ? 2 : 0}
                 />
               )
@@ -480,27 +458,6 @@ export function EditorStage() {
           </Layer>
 
           <Layer>
-            {regions.map((r) => {
-              const s = worldToScreen(vp, r.x, r.z)
-              const selected = selRegions.has(r.id)
-              const orphan = orphanRegionIds.has(r.id)
-              return (
-                <Circle
-                  key={r.id}
-                  id={r.id}
-                  name="region"
-                  x={s.sx}
-                  y={s.sy}
-                  radius={POINT_RADIUS + (selected ? 4 : 2)}
-                  fill={colorOf(r.mattype)}
-                  opacity={orphan ? 0.3 : selected ? 0.85 : 0.5}
-                  stroke={selected ? SELECT : orphan ? '#ef4444' : '#ffffff'}
-                  strokeWidth={selected ? 2 : orphan ? 2 : 1}
-                  dash={orphan ? [3, 2] : undefined}
-                  hitStrokeWidth={10}
-                />
-              )
-            })}
             {lines.map((seg) => {
               const p0 = byId.get(seg.p0)
               const p1 = byId.get(seg.p1)
@@ -508,15 +465,16 @@ export function EditorStage() {
               const a = worldToScreen(vp, p0.x, p0.z)
               const b = worldToScreen(vp, p1.x, p1.z)
               const selected = selLines.has(seg.id)
+              const style = lineStyleFor(seg.bdryFlag)
               return (
                 <Line
                   key={seg.id}
                   id={seg.id}
                   name="line"
                   points={[a.sx, a.sy, b.sx, b.sy]}
-                  stroke={selected ? SELECT : boundaryColor(seg.bdryFlag)}
-                  strokeWidth={selected ? SEGMENT_WIDTH + 2 : SEGMENT_WIDTH}
-                  dash={boundaryDash(seg.bdryFlag)}
+                  stroke={selected ? pointSettings.selectedColor : style.color}
+                  strokeWidth={selected ? lineSettings.width + 2 : lineSettings.width}
+                  dash={style.dash.length > 0 ? style.dash : undefined}
                   hitStrokeWidth={12}
                 />
               )
@@ -531,8 +489,8 @@ export function EditorStage() {
                   name="point"
                   x={s.sx}
                   y={s.sy}
-                  radius={selected ? POINT_RADIUS + 2 : POINT_RADIUS}
-                  fill={selected ? SELECT : '#1f2937'}
+                  radius={selected ? pointSettings.radius + 2 : pointSettings.radius}
+                  fill={selected ? pointSettings.selectedColor : pointSettings.color}
                   stroke="#ffffff"
                   strokeWidth={1}
                   hitStrokeWidth={8}
@@ -545,7 +503,7 @@ export function EditorStage() {
             {startScreen && hover && (
               <Line
                 points={[startScreen.sx, startScreen.sy, hover.sx, hover.sy]}
-                stroke={SELECT}
+                stroke={pointSettings.selectedColor}
                 strokeWidth={1.5}
                 dash={[6, 4]}
               />
@@ -555,7 +513,7 @@ export function EditorStage() {
                 x={hover.sx}
                 y={hover.sy}
                 radius={6}
-                stroke={hover.existingId ? SELECT : '#a855f7'}
+                stroke={hover.existingId ? pointSettings.selectedColor : '#a855f7'}
                 strokeWidth={2}
                 fill={hover.existingId ? 'rgba(124,58,237,0.15)' : 'rgba(168,85,247,0.1)'}
               />
@@ -567,7 +525,7 @@ export function EditorStage() {
                 width={marquee.x1 - marquee.x0}
                 height={marquee.y1 - marquee.y0}
                 fill="rgba(124,58,237,0.1)"
-                stroke={SELECT}
+                stroke={pointSettings.selectedColor}
                 strokeWidth={1}
                 dash={[4, 2]}
               />
