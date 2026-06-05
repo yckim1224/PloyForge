@@ -10,6 +10,7 @@ import { type Vec2 } from '../lib/geometry'
 import { Toolbar } from '../components/Toolbar'
 import { Tooltip } from '../components/Tooltip'
 import { LayerOverlay } from './LayerOverlay'
+import { HelpContent } from './HelpContent'
 import { Crosshair, HelpCircle } from 'lucide-react'
 import { computeGridLines } from './grid'
 import {
@@ -32,16 +33,10 @@ import {
 const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
 
-const HELP_HINT = [
-  'V: Select  P: Point  L: Line  H: Pan',
-  'Del: Delete  ⌘Z: Undo  ⇧⌘Z: Redo',
-  'Space: Pan (hold)  Arrows: Nudge',
-].join('\n')
-
 function StageActions({ onFit }: { onFit: () => void }) {
   return (
     <div className="absolute right-3 top-3 z-10 flex gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur">
-      <Tooltip content={HELP_HINT} placement="bottom">
+      <Tooltip content={<HelpContent />} placement="bottom">
         <button
           type="button"
           aria-label="Keyboard shortcuts"

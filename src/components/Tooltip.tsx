@@ -114,7 +114,7 @@ export function Tooltip({ content, children, placement = 'bottom', delay = 250 }
               id={id}
               role="tooltip"
               style={{ top: pos.top, left: pos.left }}
-              className="pointer-events-none fixed z-[60] max-w-xs whitespace-pre-line rounded-md border border-neutral-200 bg-neutral-900 px-2.5 py-1.5 text-xs leading-relaxed text-white shadow-md dark:border-neutral-700 dark:bg-neutral-800"
+              className="pointer-events-none fixed z-[60] max-w-sm rounded-lg border border-white/10 bg-neutral-900/95 px-3 py-2 text-xs leading-relaxed text-white shadow-lg backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95"
             >
               {renderContent(content)}
             </div>,
