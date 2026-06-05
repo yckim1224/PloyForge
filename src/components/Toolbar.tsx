@@ -5,7 +5,7 @@ const TOOLS: { id: Tool; label: string; Icon: typeof MousePointer2 }[] = [
   { id: 'select', label: 'Select (V)', Icon: MousePointer2 },
   { id: 'point', label: 'Add point (P)', Icon: Circle },
   { id: 'line', label: 'Add line (L)', Icon: Spline },
-  { id: 'pan', label: 'Pan (H)', Icon: Hand },
+  { id: 'pan', label: 'Pan (H, or hold Space)', Icon: Hand },
 ]
 
 export function Toolbar() {

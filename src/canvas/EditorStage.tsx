@@ -43,6 +43,7 @@ export function EditorStage() {
   const [vp, setVp] = useState<Viewport>({ scale: 1, originX: 0, originY: 0 })
   const [hover, setHover] = useState<Hover | null>(null)
   const [marquee, setMarquee] = useState<ScreenRect | null>(null)
+  const [spacePan, setSpacePan] = useState(false)
   const didInit = useRef(false)
   const sizeRef = useRef({ w: 0, h: 0 })
   const panning = useRef<{ x: number; y: number } | null>(null)
@@ -102,6 +103,12 @@ export function EditorStage() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return
+      // Hold Space to temporarily pan from any tool (standard editor convention).
+      if (e.code === 'Space') {
+        e.preventDefault()
+        setSpacePan(true)
+        return
+      }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault()
         if (e.shiftKey) redoEdit()
@@ -142,8 +149,25 @@ export function EditorStage() {
           return
       }
     }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setSpacePan(false)
+        panning.current = null
+      }
+    }
+    // Reset if focus is lost while Space is held (e.g. alt-tab) so pan can't stick.
+    const onBlur = () => {
+      setSpacePan(false)
+      panning.current = null
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
   }, [deleteSelection, clearSelection, setTool, setPendingLineStart])
 
   const byId = new Map(points.map((p) => [p.id, p]))
@@ -160,7 +184,7 @@ export function EditorStage() {
     const stage = e.target.getStage()
     const p = stage?.getPointerPosition()
     if (!p) return
-    if (tool === 'pan' || e.evt.button === 1) {
+    if (spacePan || tool === 'pan' || e.evt.button === 1) {
       panning.current = { x: p.x, y: p.y }
       return
     }
@@ -196,6 +220,10 @@ export function EditorStage() {
       const dy = p.y - panning.current.y
       panning.current = { x: p.x, y: p.y }
       setVp((v) => panBy(v, dx, dy))
+      return
+    }
+    if (spacePan) {
+      if (hover) setHover(null)
       return
     }
     if (marqueeStart.current) {
@@ -236,6 +264,7 @@ export function EditorStage() {
 
   const handleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
     if (e.evt.button === 1) return
+    if (spacePan) return
     if (justMarqueed.current) {
       justMarqueed.current = false
       return
@@ -308,8 +337,13 @@ export function EditorStage() {
   const startPt = pendingLineStart ? byId.get(pendingLineStart) : undefined
   const startScreen = startPt ? worldToScreen(vp, startPt.x, startPt.z) : null
 
-  const cursor =
-    tool === 'pan' ? 'grab' : tool === 'point' || tool === 'line' ? 'crosshair' : 'default'
+  const cursor = spacePan
+    ? 'grab'
+    : tool === 'pan'
+      ? 'grab'
+      : tool === 'point' || tool === 'line'
+        ? 'crosshair'
+        : 'default'
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-100">
