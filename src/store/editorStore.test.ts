@@ -191,6 +191,40 @@ describe('editorStore', () => {
     expect(store().regions[0]).toMatchObject({ x: 50, z: -50 })
   })
 
+  test('nudgeSelection moves selected points by one grid step (10x with Shift)', () => {
+    store().setDomain({ gridSpacing: 100 })
+    const a = store().addPoint(0, 0)
+    store().selectSingle('point', a)
+    store().nudgeSelection(1, 0, false) // right
+    expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 100, z: 0 })
+    store().nudgeSelection(0, 1, false) // up = +z
+    expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 100, z: 100 })
+    store().nudgeSelection(-1, 0, true) // left, large step
+    expect(store().points.find((p) => p.id === a)).toMatchObject({ x: -900, z: 100 })
+  })
+
+  test('nudgeSelection moves both endpoints of a selected segment', () => {
+    store().setDomain({ gridSpacing: 100 })
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(200, 0)
+    const s = store().addSegment(a, b)!
+    store().selectSingle('segment', s)
+    store().nudgeSelection(0, -1, false) // down = -z
+    expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 0, z: -100 })
+    expect(store().points.find((p) => p.id === b)).toMatchObject({ x: 200, z: -100 })
+  })
+
+  test('nudgeSelection moves a region seed and is a no-op without a selection', () => {
+    store().setDomain({ gridSpacing: 100 })
+    const r = store().addRegion(50, -50, 0)
+    store().selectSingle('region', r)
+    store().nudgeSelection(1, 0, false)
+    expect(store().regions[0]).toMatchObject({ x: 150, z: -50 })
+    store().clearSelection()
+    store().nudgeSelection(1, 0, false)
+    expect(store().regions[0]).toMatchObject({ x: 150, z: -50 })
+  })
+
   test('toDocument / loadDocument round-trips through the store', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)

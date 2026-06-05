@@ -28,6 +28,18 @@ const POINT_RADIUS = 4
 const SEGMENT_WIDTH = 2
 const HIT_PX = 12
 const SELECT = '#7c3aed' // violet-600
+const HUD_EMPTY = 'x —   z —'
+
+function fmtMeters(v: number): string {
+  return Math.round(v).toLocaleString('en-US')
+}
+function fmtScale(scale: number): string {
+  const mpp = scale > 0 ? 1 / scale : 0
+  return mpp >= 1 ? `${Math.round(mpp).toLocaleString('en-US')} m/px` : `${mpp.toFixed(2)} m/px`
+}
+function formatHud(x: number, z: number, scale: number): string {
+  return `x ${fmtMeters(x)}   z ${fmtMeters(z)}   ·   ${fmtScale(scale)}`
+}
 
 interface Hover {
   sx: number
@@ -47,6 +59,7 @@ export function EditorStage() {
   const didInit = useRef(false)
   const sizeRef = useRef({ w: 0, h: 0 })
   const panning = useRef<{ x: number; y: number } | null>(null)
+  const hudRef = useRef<HTMLDivElement>(null)
   const marqueeStart = useRef<{ x: number; y: number; target: 'point' | 'segment' | 'face' } | null>(
     null,
   )
@@ -68,6 +81,7 @@ export function EditorStage() {
   const selectSingle = useEditorStore((s) => s.selectSingle)
   const selectMany = useEditorStore((s) => s.selectMany)
   const toggleSelect = useEditorStore((s) => s.toggleSelect)
+  const nudgeSelection = useEditorStore((s) => s.nudgeSelection)
   const clearSelection = useEditorStore((s) => s.clearSelection)
   const setTool = useEditorStore((s) => s.setTool)
   const setPendingLineStart = useEditorStore((s) => s.setPendingLineStart)
@@ -145,6 +159,22 @@ export function EditorStage() {
         case 'H':
           setTool('pan')
           break
+        case 'ArrowRight':
+          e.preventDefault()
+          nudgeSelection(1, 0, e.shiftKey)
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          nudgeSelection(-1, 0, e.shiftKey)
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          nudgeSelection(0, 1, e.shiftKey)
+          break
+        case 'ArrowDown':
+          e.preventDefault()
+          nudgeSelection(0, -1, e.shiftKey)
+          break
         default:
           return
       }
@@ -168,7 +198,12 @@ export function EditorStage() {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
     }
-  }, [deleteSelection, clearSelection, setTool, setPendingLineStart])
+  }, [deleteSelection, clearSelection, setTool, setPendingLineStart, nudgeSelection])
+
+  // Seed the coordinate HUD until the cursor first moves.
+  useEffect(() => {
+    if (hudRef.current) hudRef.current.textContent = HUD_EMPTY
+  }, [])
 
   const byId = new Map(points.map((p) => [p.id, p]))
 
@@ -215,6 +250,10 @@ export function EditorStage() {
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const p = e.target.getStage()?.getPointerPosition()
     if (!p) return
+    if (hudRef.current) {
+      const w = screenToWorld(vp, p.x, p.y)
+      hudRef.current.textContent = formatHud(w.x, w.z, vp.scale)
+    }
     if (panning.current) {
       const dx = p.x - panning.current.x
       const dy = p.y - panning.current.y
@@ -348,6 +387,10 @@ export function EditorStage() {
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-100">
       <Toolbar />
+      <div
+        ref={hudRef}
+        className="pointer-events-none absolute bottom-2 left-2 z-10 rounded-md border border-neutral-200 bg-white/85 px-2 py-1 font-mono text-xs tabular-nums text-neutral-600 shadow-sm"
+      />
       {size.w > 0 && size.h > 0 && (
         <Stage
           width={size.w}
@@ -360,6 +403,7 @@ export function EditorStage() {
           onMouseLeave={(e) => {
             finishMarquee(e)
             setHover(null)
+            if (hudRef.current) hudRef.current.textContent = HUD_EMPTY
           }}
           onClick={handleClick}
         >

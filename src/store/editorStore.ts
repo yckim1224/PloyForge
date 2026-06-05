@@ -70,6 +70,8 @@ export interface EditorState {
   selectMany: (kind: SelectableKind, ids: string[]) => void
   toggleSelect: (kind: SelectableKind, id: string) => void
   deleteSelection: () => void
+  /** Move the current selection by one (or 10x) grid step along a unit direction. */
+  nudgeSelection: (dirX: number, dirZ: number, large: boolean) => void
 
   // Geometry mutations
   addPoint: (x: number, z: number) => string
@@ -191,6 +193,43 @@ export const useEditorStore = create<EditorState>()(
     if (sel.segmentIds.length) get().removeSegments(sel.segmentIds)
     if (sel.regionIds.length) get().removeRegions(sel.regionIds)
     get().clearSelection()
+  },
+
+  nudgeSelection: (dirX, dirZ, large) => {
+    const s = get()
+    const sel = s.selection
+    const hasSel =
+      sel.pointIds.length || sel.segmentIds.length || sel.faceIds.length || sel.regionIds.length
+    if (!hasSel) return
+    const step = s.domain.gridSpacing * (large ? 10 : 1)
+    const dx = dirX * step
+    const dz = dirZ * step
+
+    // Every point referenced by the selection (directly, or via segments/faces) moves once.
+    const movePts = new Set<string>(sel.pointIds)
+    const segById = new Map(s.segments.map((seg) => [seg.id, seg]))
+    for (const id of sel.segmentIds) {
+      const seg = segById.get(id)
+      if (seg) {
+        movePts.add(seg.p0)
+        movePts.add(seg.p1)
+      }
+    }
+    const faceById = new Map(s.faces.map((f) => [f.id, f]))
+    for (const id of sel.faceIds) {
+      faceById.get(id)?.pointIds.forEach((pid) => movePts.add(pid))
+    }
+    const moveRegions = new Set(sel.regionIds)
+
+    set((st) => ({
+      points: st.points.map((p) =>
+        movePts.has(p.id) ? { ...p, x: p.x + dx, z: p.z + dz } : p,
+      ),
+      regions: st.regions.map((r) =>
+        moveRegions.has(r.id) ? { ...r, x: r.x + dx, z: r.z + dz } : r,
+      ),
+    }))
+    get().recomputeFaces()
   },
 
   addPoint: (x, z) => {
