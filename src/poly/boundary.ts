@@ -41,14 +41,14 @@ export function boundaryColor(flag: number): string {
   return FLAG_COLORS[flag] ?? '#a855f7'
 }
 
-/** Internal segments render dashed; boundary segments solid. */
+/** Internal lines render dashed; boundary lines solid. */
 export function boundaryDash(flag: number): number[] | undefined {
   return flag === 0 ? [8, 6] : undefined
 }
 
 /**
- * Auto-assign a boundary flag from a segment's position relative to the domain extent.
- * A segment lying on a domain edge gets that edge's flag; otherwise 0 (internal).
+ * Auto-assign a boundary flag from a line's position relative to the domain extent.
+ * A line lying on a domain edge gets that edge's flag; otherwise 0 (internal).
  */
 export function autoBoundaryFlag(p0: Point, p1: Point, domain: Domain, eps?: number): number {
   const span = Math.max(domain.xmax - domain.xmin, domain.zmax - domain.zmin)

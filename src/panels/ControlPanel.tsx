@@ -12,7 +12,7 @@ import { ImportExportCard } from './ImportExportCard'
 
 const MARQUEE_OPTIONS: { id: MarqueeTarget; label: string }[] = [
   { id: 'point', label: 'Points' },
-  { id: 'segment', label: 'Segments' },
+  { id: 'line', label: 'Segments' },
   { id: 'face', label: 'Faces' },
 ]
 
@@ -73,7 +73,7 @@ export function ControlPanel() {
   const loadDocument = useEditorStore((s) => s.loadDocument)
   const requestFit = useEditorStore((s) => s.requestFit)
   const nPoints = useEditorStore((s) => s.points.length)
-  const nSegments = useEditorStore((s) => s.segments.length)
+  const nSegments = useEditorStore((s) => s.lines.length)
   const nFaces = useEditorStore((s) => s.faces.length)
   const nRegions = useEditorStore((s) => s.regions.length)
   const [sampleId, setSampleId] = useState(SAMPLES[0].id)

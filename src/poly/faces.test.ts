@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import { detectFaces } from './faces'
 import { parsePoly } from './parse'
-import type { Point, Segment } from '../types'
+import type { Point, Line } from '../types'
 import { SAMPLES } from '../samples'
 
-function ring(ids: string[]): Segment[] {
+function ring(ids: string[]): Line[] {
   return ids.map((p0, i) => ({
     id: `s${i}`,
     p0,
@@ -39,7 +39,7 @@ describe('detectFaces', () => {
       { id: 'e', x: 100, z: -100 },
       { id: 'f', x: 0, z: -100 },
     ]
-    const segments: Segment[] = [
+    const segments: Line[] = [
       { id: 's0', p0: 'a', p1: 'b', bdryFlag: 0 },
       { id: 's1', p0: 'b', p1: 'c', bdryFlag: 0 },
       { id: 's2', p0: 'c', p1: 'd', bdryFlag: 0 },
@@ -58,7 +58,7 @@ describe('detectFaces', () => {
       { id: 'b', x: 100, z: 0 },
       { id: 'c', x: 100, z: -100 },
     ]
-    const segments: Segment[] = [
+    const segments: Line[] = [
       { id: 's0', p0: 'a', p1: 'b', bdryFlag: 0 },
       { id: 's1', p0: 'b', p1: 'c', bdryFlag: 0 },
     ]
@@ -78,7 +78,7 @@ describe('detectFaces', () => {
 
   test('rifting-2d sample encloses interior faces (>=4)', () => {
     const { doc } = parsePoly(SAMPLES.find((s) => s.id === 'rifting-2d')!.content)
-    const faces = detectFaces(doc.points, doc.segments)
+    const faces = detectFaces(doc.points, doc.lines)
     // The rift cross-section has at least the 4 material regions as enclosed faces.
     expect(faces.length).toBeGreaterThanOrEqual(4)
   })

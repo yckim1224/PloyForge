@@ -84,17 +84,19 @@ function App() {
     const unsub = useEditorStore.subscribe((s, prev) => {
       if (
         s.points !== prev.points ||
-        s.segments !== prev.segments ||
+        s.lines !== prev.lines ||
         s.regions !== prev.regions ||
         s.materials !== prev.materials ||
+        s.faceTypes !== prev.faceTypes ||
         s.domain !== prev.domain
       ) {
         savePersisted({
           domain: s.domain,
           points: s.points,
-          segments: s.segments,
+          lines: s.lines,
           regions: s.regions,
           materials: s.materials,
+          faceTypes: s.faceTypes,
         })
       }
     })

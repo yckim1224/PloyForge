@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { nearestPoint, nearestSegmentPoint, snapWorld } from './snapping'
-import type { Point, Segment } from '../types'
+import { nearestPoint, nearestLinePoint, snapWorld } from './snapping'
+import type { Point, Line } from '../types'
 
 describe('snapWorld', () => {
   test('snaps to the nearest grid multiple', () => {
@@ -27,23 +27,23 @@ describe('nearestPoint', () => {
   })
 })
 
-describe('nearestSegmentPoint', () => {
+describe('nearestLinePoint', () => {
   const vp = { scale: 1, originX: 0, originY: 0 }
   // Horizontal segment at world z=-10 (screen y=10).
   const segPoints: Point[] = [
     { id: 'a', x: 0, z: -10 },
     { id: 'b', x: 200, z: -10 },
   ]
-  const segments: Segment[] = [{ id: 's', p0: 'a', p1: 'b', bdryFlag: 0 }]
+  const segments: Line[] = [{ id: 's', p0: 'a', p1: 'b', bdryFlag: 0 }]
 
   test('projects the cursor onto the edge when within the threshold', () => {
-    const hit = nearestSegmentPoint(segments, segPoints, vp, 100, 14, 10)
+    const hit = nearestLinePoint(segments, segPoints, vp, 100, 14, 10)
     expect(hit).not.toBeNull()
     expect(hit!.x).toBeCloseTo(100, 6)
     expect(hit!.z).toBeCloseTo(-10, 6)
   })
 
   test('returns null when no edge is within the threshold', () => {
-    expect(nearestSegmentPoint(segments, segPoints, vp, 100, 60, 10)).toBeNull()
+    expect(nearestLinePoint(segments, segPoints, vp, 100, 60, 10)).toBeNull()
   })
 })

@@ -30,7 +30,7 @@ export function validateDocument(doc: PolyDocument): ValidationIssue[] {
   const byId = new Map(doc.points.map((p) => [p.id, p]))
 
   if (doc.points.length === 0) issues.push({ level: 'warning', message: 'No points defined.' })
-  if (doc.segments.length === 0)
+  if (doc.lines.length === 0)
     issues.push({ level: 'warning', message: 'No segments defined.' })
   // DES3D fatally rejects nregions <= 0 (mesh.cxx new_mesh_from_polyfile).
   if (doc.regions.length === 0)
@@ -41,7 +41,7 @@ export function validateDocument(doc: PolyDocument): ValidationIssue[] {
     })
 
   // Boundary flags must be a single bit; endpoints must be valid; no self-loops.
-  for (const s of doc.segments) {
+  for (const s of doc.lines) {
     if (!isSingleBitFlag(s.bdryFlag)) {
       issues.push({
         level: 'error',
@@ -66,7 +66,7 @@ export function validateDocument(doc: PolyDocument): ValidationIssue[] {
   }
 
   // Each region seed should fall inside a closed face.
-  const faces = detectFaces(doc.points, doc.segments)
+  const faces = detectFaces(doc.points, doc.lines)
   const faceVerts = faces.map((f) =>
     f.pointIds
       .map((id) => byId.get(id))
@@ -84,7 +84,7 @@ export function validateDocument(doc: PolyDocument): ValidationIssue[] {
   }
 
   // Crossing internal segments break polygonize and confuse meshing.
-  const segs = doc.segments
+  const segs = doc.lines
     .map((s) => {
       const a = byId.get(s.p0)
       const b = byId.get(s.p1)

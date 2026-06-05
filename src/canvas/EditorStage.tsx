@@ -16,12 +16,12 @@ import {
   zoomAt,
   type Viewport,
 } from './viewport'
-import { nearestPoint, nearestSegmentPoint, snapWorld } from './snapping'
+import { nearestPoint, nearestLinePoint, snapWorld } from './snapping'
 import {
   facesInRect,
+  linesInRect,
   normalizeRect,
   pointsInRect,
-  segmentsInRect,
   type ScreenRect,
 } from './selection'
 
@@ -61,14 +61,14 @@ export function EditorStage() {
   const sizeRef = useRef({ w: 0, h: 0 })
   const panning = useRef<{ x: number; y: number } | null>(null)
   const hudRef = useRef<HTMLDivElement>(null)
-  const marqueeStart = useRef<{ x: number; y: number; target: 'point' | 'segment' | 'face' } | null>(
+  const marqueeStart = useRef<{ x: number; y: number; target: 'point' | 'line' | 'face' } | null>(
     null,
   )
   const justMarqueed = useRef(false)
 
   const domain = useEditorStore((s) => s.domain)
   const points = useEditorStore((s) => s.points)
-  const segments = useEditorStore((s) => s.segments)
+  const lines = useEditorStore((s) => s.lines)
   const regions = useEditorStore((s) => s.regions)
   const faces = useEditorStore((s) => s.faces)
   const materials = useEditorStore((s) => s.materials)
@@ -78,7 +78,7 @@ export function EditorStage() {
   const pendingLineStart = useEditorStore((s) => s.pendingLineStart)
 
   const addPoint = useEditorStore((s) => s.addPoint)
-  const addSegment = useEditorStore((s) => s.addSegment)
+  const addLine = useEditorStore((s) => s.addLine)
   const selectSingle = useEditorStore((s) => s.selectSingle)
   const selectMany = useEditorStore((s) => s.selectMany)
   const toggleSelect = useEditorStore((s) => s.toggleSelect)
@@ -229,7 +229,7 @@ export function EditorStage() {
     }
     if (tool === 'select' && e.evt.button === 0) {
       const target = e.evt.shiftKey
-        ? 'segment'
+        ? 'line'
         : e.evt.ctrlKey || e.evt.metaKey
           ? 'face'
           : marqueeTarget
@@ -245,7 +245,7 @@ export function EditorStage() {
   ): { x: number; z: number; existingId?: string } => {
     const existing = nearestPoint(points, vp, px, py, HIT_PX)
     if (existing) return { x: existing.x, z: existing.z, existingId: existing.id }
-    const onSeg = nearestSegmentPoint(segments, points, vp, px, py, HIT_PX)
+    const onSeg = nearestLinePoint(lines, points, vp, px, py, HIT_PX)
     if (onSeg) return onSeg
     const w = screenToWorld(vp, px, py)
     return snapWorld(w.x, w.z, domain.gridSpacing)
@@ -291,8 +291,8 @@ export function EditorStage() {
     const moved = Math.abs(p.x - ms.x) > 3 || Math.abs(p.y - ms.y) > 3
     if (moved) {
       if (ms.target === 'point') selectMany('point', pointsInRect(points, vp, rect))
-      else if (ms.target === 'segment')
-        selectMany('segment', segmentsInRect(points, segments, vp, rect))
+      else if (ms.target === 'line')
+        selectMany('line', linesInRect(points, lines, vp, rect))
       else selectMany('face', facesInRect(faces, points, vp, rect))
       justMarqueed.current = true
     }
@@ -323,8 +323,8 @@ export function EditorStage() {
       const kind =
         name === 'point'
           ? 'point'
-          : name === 'segment'
-            ? 'segment'
+          : name === 'line'
+            ? 'line'
             : name === 'region'
               ? 'region'
               : name === 'face'
@@ -349,7 +349,7 @@ export function EditorStage() {
       if (!pendingLineStart) {
         setPendingLineStart(endId)
       } else {
-        if (endId !== pendingLineStart) addSegment(pendingLineStart, endId)
+        if (endId !== pendingLineStart) addLine(pendingLineStart, endId)
         setPendingLineStart(endId)
       }
     }
@@ -360,7 +360,7 @@ export function EditorStage() {
     materials.find((m) => m.mattype === mattype)?.color ?? materialColor(mattype)
 
   const selPoints = new Set(selection.pointIds)
-  const selSegments = new Set(selection.segmentIds)
+  const selLines = new Set(selection.lineIds)
   const selRegions = new Set(selection.regionIds)
   const selFaces = new Set(selection.faceIds)
 
@@ -501,18 +501,18 @@ export function EditorStage() {
                 />
               )
             })}
-            {segments.map((seg) => {
+            {lines.map((seg) => {
               const p0 = byId.get(seg.p0)
               const p1 = byId.get(seg.p1)
               if (!p0 || !p1) return null
               const a = worldToScreen(vp, p0.x, p0.z)
               const b = worldToScreen(vp, p1.x, p1.z)
-              const selected = selSegments.has(seg.id)
+              const selected = selLines.has(seg.id)
               return (
                 <Line
                   key={seg.id}
                   id={seg.id}
-                  name="segment"
+                  name="line"
                   points={[a.sx, a.sy, b.sx, b.sy]}
                   stroke={selected ? SELECT : boundaryColor(seg.bdryFlag)}
                   strokeWidth={selected ? SEGMENT_WIDTH + 2 : SEGMENT_WIDTH}

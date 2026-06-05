@@ -1,4 +1,4 @@
-import type { Face, Point, Segment } from '../types'
+import type { Face, Point, Line } from '../types'
 import { worldToScreen, type Viewport } from './viewport'
 
 export interface ScreenRect {
@@ -30,16 +30,16 @@ export function pointsInRect(points: Point[], vp: Viewport, r: ScreenRect): stri
   return out
 }
 
-/** A segment is selected only when BOTH endpoints are inside the rect (full containment). */
-export function segmentsInRect(
+/** A line is selected only when BOTH endpoints are inside the rect (full containment). */
+export function linesInRect(
   points: Point[],
-  segments: Segment[],
+  lines: Line[],
   vp: Viewport,
   r: ScreenRect,
 ): string[] {
   const byId = new Map(points.map((p) => [p.id, p]))
   const out: string[] = []
-  for (const s of segments) {
+  for (const s of lines) {
     const a = byId.get(s.p0)
     const b = byId.get(s.p1)
     if (!a || !b) continue

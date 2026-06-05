@@ -12,13 +12,13 @@ function box(): PolyDocument {
     { id: 'c', x: 100, z: -100 },
     { id: 'd', x: 0, z: -100 },
   ]
-  const segments = [
+  const lines = [
     { id: 's0', p0: 'a', p1: 'b', bdryFlag: 32 },
     { id: 's1', p0: 'b', p1: 'c', bdryFlag: 2 },
     { id: 's2', p0: 'c', p1: 'd', bdryFlag: 16 },
     { id: 's3', p0: 'd', p1: 'a', bdryFlag: 1 },
   ]
-  return { domain: defaultDomain(), points, segments, regions: [], materials: [] }
+  return { domain: defaultDomain(), points, lines, regions: [], materials: [], faceTypes: {} }
 }
 
 describe('validateDocument', () => {
@@ -36,7 +36,7 @@ describe('validateDocument', () => {
 
   test('flags a non-single-bit boundary flag as an error', () => {
     const doc = box()
-    doc.segments[0].bdryFlag = 3 // 1|2, two bits
+    doc.lines[0].bdryFlag = 3 // 1|2, two bits
     const issues = validateDocument(doc)
     expect(issues.some((i) => i.level === 'error' && /single-bit/.test(i.message))).toBe(true)
   })
@@ -64,12 +64,13 @@ describe('validateDocument', () => {
         { id: 'c', x: 0, z: -100 },
         { id: 'd', x: 100, z: 0 },
       ],
-      segments: [
+      lines: [
         { id: 's0', p0: 'a', p1: 'b', bdryFlag: 0 }, // diagonal
         { id: 's1', p0: 'c', p1: 'd', bdryFlag: 0 }, // crossing diagonal
       ],
       regions: [],
       materials: [],
+      faceTypes: {},
     }
     expect(validateDocument(doc).some((i) => /cross/.test(i.message))).toBe(true)
   })

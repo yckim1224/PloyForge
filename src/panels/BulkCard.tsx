@@ -10,10 +10,10 @@ const inputClass =
   'w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm tabular-nums focus:border-violet-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100'
 
 export function BulkCard() {
-  const segments = useEditorStore((s) => s.segments)
+  const lines = useEditorStore((s) => s.lines)
   const faces = useEditorStore((s) => s.faces)
   const autoAssign = useEditorStore((s) => s.autoAssignBoundaryFlags)
-  const setSegmentFlag = useEditorStore((s) => s.setSegmentFlag)
+  const setLineFlag = useEditorStore((s) => s.setLineFlag)
   const applyFaceMaterial = useEditorStore((s) => s.applyFaceMaterial)
   const removeOrphanRegions = useEditorStore((s) => s.removeOrphanRegions)
   const [flag, setFlag] = useState(0)
@@ -44,7 +44,7 @@ export function BulkCard() {
         <Button
           size="sm"
           variant="secondary"
-          onPress={() => setSegmentFlag(segments.map((s) => s.id), flag)}
+          onPress={() => setLineFlag(lines.map((s) => s.id), flag)}
         >
           Apply
         </Button>

@@ -9,15 +9,15 @@ import { useEditorStore } from '../store/editorStore'
 function signature(doc: PolyDocument) {
   return {
     nPoints: doc.points.length,
-    nSegments: doc.segments.length,
+    nLines: doc.lines.length,
     nRegions: doc.regions.length,
-    flags: doc.segments.map((s) => s.bdryFlag).sort((a, b) => a - b),
+    flags: doc.lines.map((s) => s.bdryFlag).sort((a, b) => a - b),
     coords: doc.points.map((p) => `${p.x},${p.z}`).sort(),
     regions: doc.regions
       .map((r) => `${r.x},${r.z},${r.mattype},${r.size}`)
       .sort(),
-    // Segment endpoints as coordinate pairs (order-independent within a segment).
-    edges: doc.segments
+    // Line endpoints as coordinate pairs (order-independent within a line).
+    edges: doc.lines
       .map((s) => {
         const p0 = doc.points.find((p) => p.id === s.p0)!
         const p1 = doc.points.find((p) => p.id === s.p1)!

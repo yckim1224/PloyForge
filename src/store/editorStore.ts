@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { temporal } from 'zundo'
-import type { Domain, Face, Material, Point, PolyDocument, Region, Segment } from '../types'
+import type { Domain, Face, Line, Material, Point, PolyDocument, Region } from '../types'
 import { uid } from '../lib/id'
 import {
   coordKey,
@@ -16,26 +16,26 @@ import { autoBoundaryFlag } from '../poly/boundary'
 import { detectFaces } from '../poly/faces'
 
 export type Tool = 'select' | 'point' | 'line' | 'pan'
-export type SelectableKind = 'point' | 'segment' | 'region' | 'face'
-export type MarqueeTarget = 'point' | 'segment' | 'face'
+export type SelectableKind = 'point' | 'line' | 'region' | 'face'
+export type MarqueeTarget = 'point' | 'line' | 'face'
 
 export interface Selection {
   pointIds: string[]
-  segmentIds: string[]
+  lineIds: string[]
   faceIds: string[]
   regionIds: string[]
 }
 
 const KIND_KEY: Record<SelectableKind, keyof Selection> = {
   point: 'pointIds',
-  segment: 'segmentIds',
+  line: 'lineIds',
   region: 'regionIds',
   face: 'faceIds',
 }
 
 export const emptySelection = (): Selection => ({
   pointIds: [],
-  segmentIds: [],
+  lineIds: [],
   faceIds: [],
   regionIds: [],
 })
@@ -49,9 +49,11 @@ export interface AddLineResult {
 export interface EditorState {
   domain: Domain
   points: Point[]
-  segments: Segment[]
+  lines: Line[]
   regions: Region[]
   materials: Material[]
+  /** Face-keyed material/size map (face id -> spec); coexists with regions in Phase 0a. */
+  faceTypes: Record<string, { mattype: number; size: number }>
   /** Derived closed faces (recomputed on geometry change). */
   faces: Face[]
   selection: Selection
@@ -84,9 +86,9 @@ export interface EditorState {
   addPoint: (x: number, z: number) => string
   movePoint: (id: string, x: number, z: number) => void
   updatePoint: (id: string, patch: Partial<Pick<Point, 'x' | 'z'>>) => void
-  addSegment: (p0: string, p1: string, bdryFlag?: number) => string | null
+  addLine: (p0: string, p1: string, bdryFlag?: number) => string | null
   /**
-   * Split every segment at any point lying on its interior (T-junction noding),
+   * Split every line at any point lying on its interior (T-junction noding),
    * so polygonize sees a conforming PSLG. Returns true if anything was split.
    */
   renode: () => boolean
@@ -97,15 +99,15 @@ export interface EditorState {
     z2: number,
     autoCreate: boolean,
   ) => AddLineResult
-  updateSegment: (id: string, patch: Partial<Pick<Segment, 'bdryFlag'>>) => void
-  setSegmentFlag: (ids: string[], flag: number) => void
+  updateLine: (id: string, patch: Partial<Pick<Line, 'bdryFlag'>>) => void
+  setLineFlag: (ids: string[], flag: number) => void
   autoAssignBoundaryFlags: (ids?: string[]) => void
   addRegion: (x: number, z: number, mattype?: number, size?: number) => string
   updateRegion: (id: string, patch: Partial<Omit<Region, 'id'>>) => void
   /** Assign material/size to the region inside each face (creating a seed if needed). */
   applyFaceMaterial: (faceIds: string[], patch: { mattype?: number; size?: number }) => void
   removePoints: (ids: string[]) => void
-  removeSegments: (ids: string[]) => void
+  removeLines: (ids: string[]) => void
   removeRegions: (ids: string[]) => void
   /** Remove region seeds that no longer sit inside any detected face. */
   removeOrphanRegions: () => void
@@ -130,8 +132,8 @@ function findPointByCoord(points: Point[], x: number, z: number): Point | undefi
   return points.find((p) => coordKey(p.x, p.z) === key)
 }
 
-function segmentExists(segments: Segment[], a: string, b: string): boolean {
-  return segments.some(
+function lineExists(lines: Line[], a: string, b: string): boolean {
+  return lines.some(
     (s) => (s.p0 === a && s.p1 === b) || (s.p0 === b && s.p1 === a),
   )
 }
@@ -141,9 +143,10 @@ export const useEditorStore = create<EditorState>()(
     (set, get) => ({
   domain: defaultDomain(),
   points: [],
-  segments: [],
+  lines: [],
   regions: [],
   materials: [],
+  faceTypes: {},
   faces: [],
   selection: emptySelection(),
   tool: 'select',
@@ -159,7 +162,7 @@ export const useEditorStore = create<EditorState>()(
 
   recomputeFaces: () =>
     set((s) => {
-      const faces = detectFaces(s.points, s.segments)
+      const faces = detectFaces(s.points, s.lines)
       const valid = new Set(faces.map((f) => f.id))
       return {
         faces,
@@ -200,7 +203,7 @@ export const useEditorStore = create<EditorState>()(
   deleteSelection: () => {
     const sel = get().selection
     if (sel.pointIds.length) get().removePoints(sel.pointIds)
-    if (sel.segmentIds.length) get().removeSegments(sel.segmentIds)
+    if (sel.lineIds.length) get().removeLines(sel.lineIds)
     if (sel.regionIds.length) get().removeRegions(sel.regionIds)
     get().clearSelection()
   },
@@ -209,17 +212,17 @@ export const useEditorStore = create<EditorState>()(
     const s = get()
     const sel = s.selection
     const hasSel =
-      sel.pointIds.length || sel.segmentIds.length || sel.faceIds.length || sel.regionIds.length
+      sel.pointIds.length || sel.lineIds.length || sel.faceIds.length || sel.regionIds.length
     if (!hasSel) return
     const step = s.domain.gridSpacing * (large ? 10 : 1)
     const dx = dirX * step
     const dz = dirZ * step
 
-    // Every point referenced by the selection (directly, or via segments/faces) moves once.
+    // Every point referenced by the selection (directly, or via lines/faces) moves once.
     const movePts = new Set<string>(sel.pointIds)
-    const segById = new Map(s.segments.map((seg) => [seg.id, seg]))
-    for (const id of sel.segmentIds) {
-      const seg = segById.get(id)
+    const lineById = new Map(s.lines.map((seg) => [seg.id, seg]))
+    for (const id of sel.lineIds) {
+      const seg = lineById.get(id)
       if (seg) {
         movePts.add(seg.p0)
         movePts.add(seg.p1)
@@ -284,12 +287,12 @@ export const useEditorStore = create<EditorState>()(
     get().recomputeFaces()
   },
 
-  addSegment: (p0, p1, bdryFlag = 0) => {
+  addLine: (p0, p1, bdryFlag = 0) => {
     if (p0 === p1) return null
-    if (segmentExists(get().segments, p0, p1)) return null
+    if (lineExists(get().lines, p0, p1)) return null
     const id = uid('s')
-    set((s) => ({ segments: [...s.segments, { id, p0, p1, bdryFlag }] }))
-    // The new segment may pass through existing points; node it before meshing.
+    set((s) => ({ lines: [...s.lines, { id, p0, p1, bdryFlag }] }))
+    // The new line may pass through existing points; node it before meshing.
     get().renode()
     get().recomputeFaces()
     return id
@@ -298,9 +301,9 @@ export const useEditorStore = create<EditorState>()(
   renode: () => {
     const points = get().points
     const byId = new Map(points.map((p) => [p.id, p]))
-    const next: Segment[] = []
+    const next: Line[] = []
     let changed = false
-    for (const s of get().segments) {
+    for (const s of get().lines) {
       const a = byId.get(s.p0)
       const b = byId.get(s.p1)
       if (!a || !b) {
@@ -322,7 +325,7 @@ export const useEditorStore = create<EditorState>()(
       }
     }
     if (!changed) return false
-    // Splitting can produce a piece coinciding with another segment; keep one.
+    // Splitting can produce a piece coinciding with another line; keep one.
     const seen = new Set<string>()
     const deduped = next.filter((s) => {
       const key = s.p0 < s.p1 ? `${s.p0}|${s.p1}` : `${s.p1}|${s.p0}`
@@ -332,10 +335,10 @@ export const useEditorStore = create<EditorState>()(
     })
     const validIds = new Set(deduped.map((s) => s.id))
     set((st) => ({
-      segments: deduped,
+      lines: deduped,
       selection: {
         ...st.selection,
-        segmentIds: st.selection.segmentIds.filter((id) => validIds.has(id)),
+        lineIds: st.selection.lineIds.filter((id) => validIds.has(id)),
       },
     }))
     return true
@@ -362,7 +365,7 @@ export const useEditorStore = create<EditorState>()(
         error: 'Endpoint does not match an existing point (enable auto-create).',
       }
     }
-    const segmentId = get().addSegment(a, b)
+    const segmentId = get().addLine(a, b)
     if (segmentId === null) {
       // Roll back auto-created points so a rejected line leaves no orphans.
       if (created.length) get().removePoints(created)
@@ -375,16 +378,16 @@ export const useEditorStore = create<EditorState>()(
     return { segmentId, createdPointIds: created }
   },
 
-  updateSegment: (id, patch) => {
+  updateLine: (id, patch) => {
     set((s) => ({
-      segments: s.segments.map((seg) => (seg.id === id ? { ...seg, ...patch } : seg)),
+      lines: s.lines.map((seg) => (seg.id === id ? { ...seg, ...patch } : seg)),
     }))
   },
 
-  setSegmentFlag: (ids, flag) => {
+  setLineFlag: (ids, flag) => {
     const idSet = new Set(ids)
     set((s) => ({
-      segments: s.segments.map((seg) => (idSet.has(seg.id) ? { ...seg, bdryFlag: flag } : seg)),
+      lines: s.lines.map((seg) => (idSet.has(seg.id) ? { ...seg, bdryFlag: flag } : seg)),
     }))
   },
 
@@ -393,7 +396,7 @@ export const useEditorStore = create<EditorState>()(
     const byId = new Map(points.map((p) => [p.id, p]))
     const target = ids ? new Set(ids) : null
     set((s) => ({
-      segments: s.segments.map((seg) => {
+      lines: s.lines.map((seg) => {
         if (target && !target.has(seg.id)) return seg
         const a = byId.get(seg.p0)
         const b = byId.get(seg.p1)
@@ -442,8 +445,8 @@ export const useEditorStore = create<EditorState>()(
     const idSet = new Set(ids)
     set((s) => ({
       points: s.points.filter((p) => !idSet.has(p.id)),
-      // Cascade: drop segments that referenced a removed point.
-      segments: s.segments.filter((seg) => !idSet.has(seg.p0) && !idSet.has(seg.p1)),
+      // Cascade: drop lines that referenced a removed point.
+      lines: s.lines.filter((seg) => !idSet.has(seg.p0) && !idSet.has(seg.p1)),
       selection: {
         ...s.selection,
         pointIds: s.selection.pointIds.filter((id) => !idSet.has(id)),
@@ -454,13 +457,13 @@ export const useEditorStore = create<EditorState>()(
     get().recomputeFaces()
   },
 
-  removeSegments: (ids) => {
+  removeLines: (ids) => {
     const idSet = new Set(ids)
     set((s) => ({
-      segments: s.segments.filter((seg) => !idSet.has(seg.id)),
+      lines: s.lines.filter((seg) => !idSet.has(seg.id)),
       selection: {
         ...s.selection,
-        segmentIds: s.selection.segmentIds.filter((id) => !idSet.has(id)),
+        lineIds: s.selection.lineIds.filter((id) => !idSet.has(id)),
       },
     }))
     get().recomputeFaces()
@@ -521,9 +524,10 @@ export const useEditorStore = create<EditorState>()(
     set((s) => ({
       domain: doc.domain,
       points: doc.points,
-      segments: doc.segments,
+      lines: doc.lines,
       regions: doc.regions,
       materials: doc.materials,
+      faceTypes: doc.faceTypes ?? {},
       selection: emptySelection(),
       pendingLineStart: null,
       fitNonce: s.fitNonce + 1,
@@ -536,9 +540,10 @@ export const useEditorStore = create<EditorState>()(
     return {
       domain: s.domain,
       points: s.points,
-      segments: s.segments,
+      lines: s.lines,
       regions: s.regions,
       materials: s.materials,
+      faceTypes: s.faceTypes,
     }
   },
 
@@ -546,9 +551,10 @@ export const useEditorStore = create<EditorState>()(
     set({
       domain: defaultDomain(),
       points: [],
-      segments: [],
+      lines: [],
       regions: [],
       materials: [],
+      faceTypes: {},
       faces: [],
       selection: emptySelection(),
       pendingLineStart: null,
@@ -559,19 +565,21 @@ export const useEditorStore = create<EditorState>()(
       partialize: (s) => ({
         domain: s.domain,
         points: s.points,
-        segments: s.segments,
+        lines: s.lines,
         regions: s.regions,
         materials: s.materials,
+        faceTypes: s.faceTypes,
       }),
       limit: 100,
       equality: (a, b) =>
         a.points === b.points &&
-        a.segments === b.segments &&
+        a.lines === b.lines &&
         a.regions === b.regions &&
         a.materials === b.materials &&
+        a.faceTypes === b.faceTypes &&
         a.domain === b.domain,
       // A single user action calls set() several times (e.g. addLineByCoords ->
-      // addPoint + addPoint + addSegment). Record only the first change of each
+      // addPoint + addPoint + addLine). Record only the first change of each
       // synchronous burst so one action becomes exactly one undo step.
       handleSet: (record) => {
         let batching = false

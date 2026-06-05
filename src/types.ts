@@ -22,11 +22,11 @@ export interface Point {
 }
 
 /**
- * Boundary flag for a segment. DES3D requires a single bit:
+ * Boundary flag for a line. DES3D requires a single bit:
  * 0 = internal, 1 = left (X0), 2 = right (X1), 16 = bottom (Z0), 32 = top (Z1).
  * (3D adds 4/8 for Y0/Y1 and 64..512 for slanted faces.)
  */
-export interface Segment {
+export interface Line {
   id: string
   p0: string
   p1: string
@@ -50,7 +50,7 @@ export interface Region {
 export interface Face {
   id: string
   pointIds: string[]
-  segmentIds: string[]
+  lineIds: string[]
   centroid: { x: number; z: number }
   area: number
   regionId?: string
@@ -62,11 +62,16 @@ export interface Material {
   label?: string
 }
 
-/** The serializable editor document (derived faces excluded). */
+/**
+ * The serializable editor document (derived faces excluded).
+ * `faceTypes` maps a deterministic face id to its assigned material/size
+ * (used by the upcoming face-keyed storage model; coexists with `regions` in Phase 0a).
+ */
 export interface PolyDocument {
   domain: Domain
   points: Point[]
-  segments: Segment[]
+  lines: Line[]
   regions: Region[]
   materials: Material[]
+  faceTypes: Record<string, { mattype: number; size: number }>
 }

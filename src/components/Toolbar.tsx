@@ -15,7 +15,7 @@ export function Toolbar() {
   const hasSelection = useEditorStore(
     (s) =>
       s.selection.pointIds.length +
-        s.selection.segmentIds.length +
+        s.selection.lineIds.length +
         s.selection.regionIds.length >
       0,
   )

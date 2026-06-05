@@ -1,4 +1,4 @@
-import type { Material, Point, PolyDocument, Region, Segment } from '../types'
+import type { Line, Material, Point, PolyDocument, Region } from '../types'
 import { uid } from '../lib/id'
 import { inferDomain } from '../lib/defaults'
 import { materialColor } from '../constants/materials'
@@ -73,7 +73,7 @@ export function parsePoly(text: string): ParseResult {
     warnings.push(`Segment header has_bdryflag=${hasFlag} (expected 1); missing flags treated as 0.`)
   }
 
-  const segments: Segment[] = []
+  const lines: Line[] = []
   for (let k = 0; k < nseg; k++) {
     const t = next()
     // line: j p0 p1 [bdry_flag]
@@ -86,7 +86,7 @@ export function parsePoly(text: string): ParseResult {
       warnings.push(`Segment ${k} references unknown node (${p0o} -> ${p1o}); skipped.`)
       continue
     }
-    segments.push({ id: uid('s'), p0, p1, bdryFlag: Number.isFinite(flag) ? flag : 0 })
+    lines.push({ id: uid('s'), p0, p1, bdryFlag: Number.isFinite(flag) ? flag : 0 })
   }
 
   // Holes header (DES3D requires 0)
@@ -133,5 +133,8 @@ export function parsePoly(text: string): ParseResult {
 
   const domain = inferDomain(points)
   const materials = inferMaterials(regions)
-  return { doc: { domain, points, segments, regions, materials }, warnings }
+  return {
+    doc: { domain, points, lines, regions, materials, faceTypes: {} },
+    warnings,
+  }
 }

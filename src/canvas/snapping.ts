@@ -1,4 +1,4 @@
-import type { Point, Segment } from '../types'
+import type { Point, Line } from '../types'
 import { snap } from '../lib/geometry'
 import { screenToWorld, worldToScreen, type Viewport } from './viewport'
 
@@ -29,11 +29,11 @@ export function nearestPoint(
 }
 
 /**
- * Nearest point lying ON a segment (its projection) within `thresholdPx` screen
+ * Nearest point lying ON a line (its projection) within `thresholdPx` screen
  * pixels, or null. Lets the user drop a point exactly on an edge so faces split.
  */
-export function nearestSegmentPoint(
-  segments: Segment[],
+export function nearestLinePoint(
+  lines: Line[],
   points: Point[],
   vp: Viewport,
   sx: number,
@@ -43,7 +43,7 @@ export function nearestSegmentPoint(
   const byId = new Map(points.map((p) => [p.id, p]))
   let best: { x: number; z: number } | null = null
   let bestD = thresholdPx
-  for (const s of segments) {
+  for (const s of lines) {
     const a = byId.get(s.p0)
     const b = byId.get(s.p1)
     if (!a || !b) continue

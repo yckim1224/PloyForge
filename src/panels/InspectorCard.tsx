@@ -67,20 +67,20 @@ function PointInspector() {
   return <p className="text-xs text-neutral-500">{pointIds.length} points selected.</p>
 }
 
-function SegmentInspector() {
-  const segmentIds = useEditorStore((s) => s.selection.segmentIds)
-  const segments = useEditorStore((s) => s.segments)
-  const setSegmentFlag = useEditorStore((s) => s.setSegmentFlag)
+function LineInspector() {
+  const lineIds = useEditorStore((s) => s.selection.lineIds)
+  const lines = useEditorStore((s) => s.lines)
+  const setLineFlag = useEditorStore((s) => s.setLineFlag)
   const autoAssign = useEditorStore((s) => s.autoAssignBoundaryFlags)
 
-  const selected = segments.filter((s) => segmentIds.includes(s.id))
+  const selected = lines.filter((s) => lineIds.includes(s.id))
   const flags = new Set(selected.map((s) => s.bdryFlag))
-  const shared = flags.size === 1 ? [...flags][0] : ''
+  const shared: number | '' = flags.size === 1 ? [...flags][0] : ''
 
   return (
     <div className="flex flex-col gap-2">
-      {segmentIds.length > 1 && (
-        <p className="text-xs text-neutral-500">{segmentIds.length} segments selected.</p>
+      {lineIds.length > 1 && (
+        <p className="text-xs text-neutral-500">{lineIds.length} segments selected.</p>
       )}
       <label className="flex flex-col gap-1">
         <span className="text-xs text-neutral-500">Boundary flag</span>
@@ -88,7 +88,7 @@ function SegmentInspector() {
           {shared !== '' && <Swatch color={boundaryColor(shared)} />}
           <select
             value={String(shared)}
-            onChange={(e) => setSegmentFlag(segmentIds, Number(e.target.value))}
+            onChange={(e) => setLineFlag(lineIds, Number(e.target.value))}
             className={selectClass}
           >
             {shared === '' && <option value="">— mixed —</option>}
@@ -100,7 +100,7 @@ function SegmentInspector() {
           </select>
         </div>
       </label>
-      <Button size="sm" variant="secondary" onPress={() => autoAssign(segmentIds)}>
+      <Button size="sm" variant="secondary" onPress={() => autoAssign(lineIds)}>
         <Wand2 className="size-4" />
         Auto-assign from extent
       </Button>
@@ -196,9 +196,9 @@ function RegionInspector() {
 }
 
 export function InspectorCard() {
-  const { pointIds, segmentIds, faceIds, regionIds } = useEditorStore((s) => s.selection)
+  const { pointIds, lineIds, faceIds, regionIds } = useEditorStore((s) => s.selection)
   if (pointIds.length) return <PointInspector />
-  if (segmentIds.length) return <SegmentInspector />
+  if (lineIds.length) return <LineInspector />
   if (faceIds.length) return <FaceInspector />
   if (regionIds.length) return <RegionInspector />
   return (
