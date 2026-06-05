@@ -8,8 +8,26 @@ import { ConfirmModal } from '../components/ConfirmModal'
 import { InputModal } from '../components/InputModal'
 import { Menu } from '../components/Menu'
 import { useEditorStore } from '../store/editorStore'
+import { useSettingsStore, type BoundaryFlagKey } from '../store/settingsStore'
 import { BOUNDARY_OPTIONS_2D } from '../poly/boundary'
 import type { Line } from '../types'
+
+/** Short label per boundary flag value. */
+const BF_SHORT: Record<number, string> = { 0: 'I', 1: 'X0', 2: 'X1', 16: 'Z0', 32: 'Z1' }
+
+function BfCell({ bf }: { bf: number }) {
+  const styleByFlag = useSettingsStore((s) => s.line.styleByFlag)
+  const label = BF_SHORT[bf] ?? String(bf)
+  if (bf === 0) {
+    return <span className="font-medium text-neutral-400 dark:text-neutral-500">{label}</span>
+  }
+  const style = styleByFlag[bf as BoundaryFlagKey]
+  return (
+    <span className="font-medium tabular-nums" style={{ color: style?.color }}>
+      {label}
+    </span>
+  )
+}
 
 function parseIntOrNull(raw: string): number | null {
   if (raw.trim() === '') return null
@@ -89,7 +107,7 @@ export function LinesSection() {
       {
         key: 'bf',
         header: 'BF',
-        render: (l) => l.bdryFlag,
+        render: (l) => <BfCell bf={l.bdryFlag} />,
         edit: {
           type: 'select',
           options: BF_OPTIONS,
