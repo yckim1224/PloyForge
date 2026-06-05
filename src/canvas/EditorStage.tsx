@@ -357,9 +357,13 @@ export function EditorStage() {
     setMarquee(null)
   }
 
-  const resolveEndpointId = (px: number, py: number): string => {
+  const resolveEndpointId = (
+    px: number,
+    py: number,
+  ): { id: string; created: boolean } => {
     const tgt = resolveTarget(px, py)
-    return tgt.existingId ?? addPoint(tgt.x, tgt.z)
+    if (tgt.existingId) return { id: tgt.existingId, created: false }
+    return { id: addPoint(tgt.x, tgt.z), created: true }
   }
 
   const handleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -400,7 +404,7 @@ export function EditorStage() {
       return
     }
     if (tool === 'line') {
-      const endId = resolveEndpointId(p.x, p.y)
+      const { id: endId, created } = resolveEndpointId(p.x, p.y)
       if (!pendingLineStart) {
         setPendingLineStart(endId)
       } else if (endId !== pendingLineStart) {
@@ -409,8 +413,15 @@ export function EditorStage() {
         // in that case keep pendingLineStart so the hover preview stays at
         // the original start, signalling that the click was a no-op.
         const lineId = addLine(pendingLineStart, endId)
-        if (lineId) setPendingLineStart(endId)
-        else toast.warning('A line between these points already exists.')
+        if (lineId) {
+          setPendingLineStart(endId)
+        } else if (!created) {
+          // Only warn on a true duplicate -- both endpoints pre-existed.
+          // If this click added a new point on an existing line, renode
+          // already split that line at the new point (legitimate noding),
+          // so the "already exists" notice would be misleading.
+          toast.warning('A line between these points already exists.')
+        }
       }
     }
   }
