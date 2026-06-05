@@ -1,13 +1,9 @@
-import { useState, type ReactNode } from 'react'
-import { Button } from '@heroui/react'
-import { Crosshair, Upload } from 'lucide-react'
+import { type ReactNode } from 'react'
 import { useEditorStore, type MarqueeTarget } from '../store/editorStore'
-import { SAMPLES } from '../samples'
-import { parsePoly } from '../poly/parse'
 import { AddCard } from './AddCard'
 import { InspectorCard } from './InspectorCard'
 import { BulkCard } from './BulkCard'
-import { ImportExportCard } from './ImportExportCard'
+import { AppActions } from './AppActions'
 
 const MARQUEE_OPTIONS: { id: MarqueeTarget; label: string }[] = [
   { id: 'point', label: 'Points' },
@@ -69,52 +65,14 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 
 export function ControlPanel() {
-  const loadDocument = useEditorStore((s) => s.loadDocument)
-  const requestFit = useEditorStore((s) => s.requestFit)
   const nPoints = useEditorStore((s) => s.points.length)
   const nLines = useEditorStore((s) => s.lines.length)
   const nFaces = useEditorStore((s) => s.faces.length)
-  const [sampleId, setSampleId] = useState(SAMPLES[0].id)
-
-  const handleLoad = () => {
-    const s = SAMPLES.find((x) => x.id === sampleId)
-    if (!s) return
-    const parsed = parsePoly(s.content)
-    loadDocument(parsed.doc, parsed.discoveredMaterials)
-    useEditorStore.temporal.getState().clear()
-  }
 
   return (
     <div className="flex h-full w-full flex-col overflow-y-auto bg-white dark:bg-neutral-900">
-      <Section title="Sample">
-        <div className="flex flex-col gap-2">
-          <select
-            aria-label="Sample file"
-            value={sampleId}
-            onChange={(e) => setSampleId(e.target.value)}
-            className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-800 focus:border-violet-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100"
-          >
-            {SAMPLES.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} — {s.description}
-              </option>
-            ))}
-          </select>
-          <div className="flex gap-2">
-            <Button size="sm" variant="primary" onPress={handleLoad}>
-              <Upload className="size-4" />
-              Load sample
-            </Button>
-            <Button size="sm" variant="secondary" onPress={requestFit}>
-              <Crosshair className="size-4" />
-              Fit view
-            </Button>
-          </div>
-        </div>
-      </Section>
-
-      <Section title="File">
-        <ImportExportCard />
+      <Section title="Actions">
+        <AppActions />
       </Section>
 
       <Section title="Inspector">

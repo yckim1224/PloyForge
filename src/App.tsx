@@ -135,7 +135,7 @@ function App() {
     <div className="flex h-full w-full flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
       <AppBar />
       <div className="min-h-0 flex-1">
-        <ResizableSplit left={<EditorStage />} right={<ControlPanel />} />
+        <ResizableSplit left={<ControlPanel />} right={<EditorStage />} />
       </div>
     </div>
   )

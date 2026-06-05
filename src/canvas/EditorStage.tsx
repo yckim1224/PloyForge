@@ -6,6 +6,7 @@ import { useSettingsStore } from '../store/settingsStore'
 import { materialColor } from '../constants/materials'
 import { type Vec2 } from '../lib/geometry'
 import { Toolbar } from '../components/Toolbar'
+import { Crosshair, HelpCircle } from 'lucide-react'
 import { computeGridLines } from './grid'
 import {
   fitDomain,
@@ -26,6 +27,36 @@ import {
 
 const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
+
+const HELP_HINT = [
+  'V: Select  P: Point  L: Line  H: Pan',
+  'Del: Delete  ⌘Z: Undo  ⇧⌘Z: Redo',
+  'Space: Pan (hold)  Arrows: Nudge',
+].join('\n')
+
+function StageActions({ onFit }: { onFit: () => void }) {
+  return (
+    <div className="absolute right-3 top-3 z-10 flex gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur">
+      <button
+        type="button"
+        title={HELP_HINT}
+        aria-label="Keyboard shortcuts"
+        className="flex size-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100"
+      >
+        <HelpCircle className="size-4" />
+      </button>
+      <button
+        type="button"
+        title="Fit view"
+        aria-label="Fit view"
+        onClick={onFit}
+        className="flex size-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100"
+      >
+        <Crosshair className="size-4" />
+      </button>
+    </div>
+  )
+}
 
 function fmtMeters(v: number): string {
   return Math.round(v).toLocaleString('en-US')
@@ -78,6 +109,7 @@ export function EditorStage() {
 
   const addPoint = useEditorStore((s) => s.addPoint)
   const addLine = useEditorStore((s) => s.addLine)
+  const requestFit = useEditorStore((s) => s.requestFit)
   const selectSingle = useEditorStore((s) => s.selectSingle)
   const selectMany = useEditorStore((s) => s.selectMany)
   const toggleSelect = useEditorStore((s) => s.toggleSelect)
@@ -388,6 +420,7 @@ export function EditorStage() {
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-100">
       <Toolbar />
+      <StageActions onFit={requestFit} />
       <div
         ref={hudRef}
         className="pointer-events-none absolute bottom-2 left-2 z-10 rounded-md border border-neutral-200 bg-white/85 px-2 py-1 font-mono text-xs tabular-nums text-neutral-600 shadow-sm"
