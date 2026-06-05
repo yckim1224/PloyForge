@@ -4,6 +4,7 @@ import type Konva from 'konva'
 import { redoEdit, undoEdit, useEditorStore } from '../store/editorStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { useLayerStore } from '../store/layerStore'
+import { toast } from '../store/toastStore'
 import { materialColor } from '../constants/materials'
 import { type Vec2 } from '../lib/geometry'
 import { Toolbar } from '../components/Toolbar'
@@ -409,6 +410,7 @@ export function EditorStage() {
         // the original start, signalling that the click was a no-op.
         const lineId = addLine(pendingLineStart, endId)
         if (lineId) setPendingLineStart(endId)
+        else toast.warning('A line between these points already exists.')
       }
     }
   }

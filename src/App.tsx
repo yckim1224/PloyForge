@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore } from 'zustand'
 import { Hammer, Moon, Redo2, Sun, Undo2 } from 'lucide-react'
 import { ResizableSplit } from './components/ResizableSplit'
+import { ToastViewport } from './components/ToastViewport'
 import { EditorStage } from './canvas/EditorStage'
 import { ControlPanel } from './panels/ControlPanel'
 import { redoEdit, undoEdit, useEditorStore } from './store/editorStore'
@@ -166,6 +167,7 @@ function App() {
       <div className="min-h-0 flex-1">
         <ResizableSplit left={<ControlPanel />} right={<EditorStage />} />
       </div>
+      <ToastViewport />
     </div>
   )
 }
