@@ -24,15 +24,19 @@ describe('pointsInRect', () => {
   })
 })
 
-describe('segmentsInRect', () => {
+describe('segmentsInRect (full containment)', () => {
+  // points: a(10,10) b(200,10) c(10,200) in screen space.
   const segments: Segment[] = [
-    { id: 'ab', p0: 'a', p1: 'b', bdryFlag: 0 }, // horizontal at y=10
-    { id: 'ac', p0: 'a', p1: 'c', bdryFlag: 0 }, // vertical at x=10
+    { id: 'ab', p0: 'a', p1: 'b', bdryFlag: 0 },
+    { id: 'ac', p0: 'a', p1: 'c', bdryFlag: 0 },
   ]
-  test('selects a segment crossing the rect even if endpoints are outside', () => {
-    // Rect around x=100..150, y=0..50 crosses segment ab (y=10).
-    const r = normalizeRect(100, 0, 150, 50)
+  test('selects a segment only when BOTH endpoints are inside', () => {
+    const r = normalizeRect(0, 0, 210, 20) // covers a and b, not c
     expect(segmentsInRect(points, segments, vp, r)).toEqual(['ab'])
+  })
+  test('does NOT select a segment that merely crosses the rect', () => {
+    const r = normalizeRect(100, 0, 150, 50) // crosses ab but no endpoint inside
+    expect(segmentsInRect(points, segments, vp, r)).toEqual([])
   })
   test('ignores segments fully outside', () => {
     const r = normalizeRect(300, 300, 400, 400)
@@ -40,13 +44,27 @@ describe('segmentsInRect', () => {
   })
 })
 
-describe('facesInRect', () => {
-  const faces: Face[] = [
-    { id: 'f1', pointIds: [], segmentIds: [], centroid: { x: 50, z: -50 }, area: 1 },
-    { id: 'f2', pointIds: [], segmentIds: [], centroid: { x: 500, z: -500 }, area: 1 },
+describe('facesInRect (full containment)', () => {
+  // f1 is a square with screen vertices in x,y ∈ {10, 50}; f2 is far away.
+  const facePoints: Point[] = [
+    { id: 'p1', x: 10, z: -10 },
+    { id: 'p2', x: 50, z: -10 },
+    { id: 'p3', x: 50, z: -50 },
+    { id: 'p4', x: 10, z: -50 },
+    { id: 'q1', x: 500, z: -500 },
+    { id: 'q2', x: 540, z: -500 },
+    { id: 'q3', x: 540, z: -540 },
   ]
-  test('selects faces whose centroid is inside', () => {
+  const faces: Face[] = [
+    { id: 'f1', pointIds: ['p1', 'p2', 'p3', 'p4'], segmentIds: [], centroid: { x: 30, z: -30 }, area: 1600 },
+    { id: 'f2', pointIds: ['q1', 'q2', 'q3'], segmentIds: [], centroid: { x: 520, z: -520 }, area: 1 },
+  ]
+  test('selects a face only when ALL its vertices are inside', () => {
     const r = normalizeRect(0, 0, 100, 100)
-    expect(facesInRect(faces, vp, r)).toEqual(['f1'])
+    expect(facesInRect(faces, facePoints, vp, r)).toEqual(['f1'])
+  })
+  test('does NOT select a face that is only partially inside', () => {
+    const r = normalizeRect(0, 0, 30, 100) // covers x=10 vertices but not x=50 ones
+    expect(facesInRect(faces, facePoints, vp, r)).toEqual([])
   })
 })

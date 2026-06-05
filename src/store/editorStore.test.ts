@@ -65,6 +65,18 @@ describe('editorStore', () => {
     expect(store().selection.pointIds).toEqual([b]) // removed
   })
 
+  test('toggleSelect keeps the selection single-kind (switches on a different type)', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const s = store().addSegment(a, b)!
+    store().toggleSelect('point', a)
+    expect(store().selection.pointIds).toEqual([a])
+    // Toggling a segment while a point is selected switches to just that segment.
+    store().toggleSelect('segment', s)
+    expect(store().selection.pointIds).toEqual([])
+    expect(store().selection.segmentIds).toEqual([s])
+  })
+
   test('deleteSelection removes selected points (with cascade) and clears selection', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)

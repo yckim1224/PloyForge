@@ -66,6 +66,7 @@ export function EditorStage() {
   const addSegment = useEditorStore((s) => s.addSegment)
   const selectSingle = useEditorStore((s) => s.selectSingle)
   const selectMany = useEditorStore((s) => s.selectMany)
+  const toggleSelect = useEditorStore((s) => s.toggleSelect)
   const clearSelection = useEditorStore((s) => s.clearSelection)
   const setTool = useEditorStore((s) => s.setTool)
   const setPendingLineStart = useEditorStore((s) => s.setPendingLineStart)
@@ -221,7 +222,7 @@ export function EditorStage() {
       if (ms.target === 'point') selectMany('point', pointsInRect(points, vp, rect))
       else if (ms.target === 'segment')
         selectMany('segment', segmentsInRect(points, segments, vp, rect))
-      else selectMany('face', facesInRect(faces, vp, rect))
+      else selectMany('face', facesInRect(faces, points, vp, rect))
       justMarqueed.current = true
     }
     marqueeStart.current = null
@@ -247,11 +248,23 @@ export function EditorStage() {
     const id = typeof node.id === 'function' ? node.id() : ''
 
     if (tool === 'select') {
-      if (name === 'point') selectSingle('point', id)
-      else if (name === 'segment') selectSingle('segment', id)
-      else if (name === 'region') selectSingle('region', id)
-      else if (name === 'face') selectSingle('face', id)
-      else clearSelection()
+      const kind =
+        name === 'point'
+          ? 'point'
+          : name === 'segment'
+            ? 'segment'
+            : name === 'region'
+              ? 'region'
+              : name === 'face'
+                ? 'face'
+                : null
+      const additive = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey
+      if (kind) {
+        if (additive) toggleSelect(kind, id)
+        else selectSingle(kind, id)
+      } else if (!additive) {
+        clearSelection()
+      }
       return
     }
     if (tool === 'point') {

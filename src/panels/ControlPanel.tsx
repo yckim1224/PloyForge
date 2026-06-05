@@ -38,8 +38,10 @@ function MarqueeToggle() {
         ))}
       </div>
       <p className="text-xs text-neutral-400 dark:text-neutral-500">
-        Drag to marquee-select. Hold <kbd className="font-mono">Shift</kbd> for segments,{' '}
-        <kbd className="font-mono">Ctrl</kbd> for faces.
+        Drag to marquee-select fully-enclosed objects. Hold{' '}
+        <kbd className="font-mono">Shift</kbd> for segments, <kbd className="font-mono">Ctrl</kbd>{' '}
+        for faces. <kbd className="font-mono">Ctrl</kbd>/<kbd className="font-mono">Shift</kbd>+click
+        to add or remove from the selection.
       </p>
     </div>
   )

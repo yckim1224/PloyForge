@@ -173,9 +173,15 @@ export const useEditorStore = create<EditorState>()(
   toggleSelect: (kind, id) => {
     set((s) => {
       const key = KIND_KEY[kind]
-      const arr = s.selection[key]
+      // Keep selection single-kind: toggling a different type starts fresh with it.
+      const hasOtherKind = (Object.keys(KIND_KEY) as SelectableKind[]).some(
+        (k) => k !== kind && s.selection[KIND_KEY[k]].length > 0,
+      )
+      const arr = hasOtherKind ? [] : s.selection[key]
       const next = arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]
-      return { selection: { ...s.selection, [key]: next } }
+      const sel = emptySelection()
+      sel[key] = next
+      return { selection: sel }
     })
   },
 
