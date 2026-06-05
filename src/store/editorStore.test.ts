@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'vitest'
 import { useEditorStore } from './editorStore'
 import { useSettingsStore, defaultSettings } from './settingsStore'
+import { serializePoly } from '../poly/serialize'
 
 const store = () => useEditorStore.getState()
 
@@ -367,6 +368,83 @@ describe('editorStore', () => {
     store().loadDocument(doc)
     useEditorStore.temporal.getState().clear()
     expect(useEditorStore.temporal.getState().pastStates.length).toBe(0)
+  })
+
+  test('insertPoint(null, ...) appends at the end (A-4)', () => {
+    store().addPoint(0, 0)
+    store().addPoint(100, 0)
+    const before = store().points.length
+    const id = store().insertPoint(null, 50, -50)
+    expect(store().points.length).toBe(before + 1)
+    expect(store().points[store().points.length - 1].id).toBe(id)
+  })
+
+  test('insertPoint(k, ...) splices and preserves uids of shifted items (A-5)', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(200, 0)
+    const before = store().points.map((p) => p.id)
+    const newId = store().insertPoint(1, 50, 0)
+    const after = store().points.map((p) => p.id)
+    // Insertion at slot 1 yields [a, new, b, c]; original uids unchanged.
+    expect(after).toEqual([a, newId, b, c])
+    // Display indices shifted; uids stable.
+    expect(before).toEqual([a, b, c])
+  })
+
+  test('insertPoint(huge, ...) clamps to append', () => {
+    const a = store().addPoint(0, 0)
+    const newId = store().insertPoint(99, 50, -50)
+    expect(store().points.map((p) => p.id)).toEqual([a, newId])
+  })
+
+  test('insertLine(null, ...) appends, insertLine(k, ...) splices', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    const s0 = store().addLine(a, b)!
+    const s1 = store().addLine(b, c)!
+    const sNew = store().insertLine(null, a, c)!
+    expect(store().lines.map((l) => l.id)).toEqual([s0, s1, sNew])
+    const sSpliced = store().insertLine(1, b, d)!
+    expect(store().lines.map((l) => l.id)).toEqual([s0, sSpliced, s1, sNew])
+  })
+
+  test('insertLine rejects self-loops and duplicates', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().addLine(a, b)
+    expect(store().insertLine(0, a, a)).toBeNull()
+    expect(store().insertLine(0, b, a)).toBeNull()
+    expect(store().insertLine(null, a, b)).toBeNull()
+  })
+
+  test('after insertPoint(k, ...) export emits nodes 0..N-1 with Line indices reflecting new order (A-6)', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().addLine(a, b)
+    // Insert at the front: a becomes index 1, b becomes index 2.
+    store().insertPoint(0, 50, -50)
+    const { text } = serializePoly(store().toDocument())
+    const lines = text.split('\n')
+    // Find the node block: "<n> 2 0 0" header, then n lines of "i x z".
+    const nodeHdrIdx = lines.findIndex((l) => /^\d+ 2 0 0$/.test(l))
+    expect(nodeHdrIdx).toBeGreaterThan(-1)
+    const nNodes = Number(lines[nodeHdrIdx].split(' ')[0])
+    expect(nNodes).toBe(3)
+    // Subsequent header is "# i x z"; nodes start at nodeHdrIdx + 2.
+    const nodeLines = lines.slice(nodeHdrIdx + 2, nodeHdrIdx + 2 + nNodes)
+    nodeLines.forEach((l, i) => {
+      expect(l.split(' ')[0]).toBe(String(i))
+    })
+    // The single segment now references indices 1 and 2 (a and b after the splice).
+    const segHdrIdx = lines.findIndex((l) => /^\d+ 1$/.test(l))
+    const segLine = lines[segHdrIdx + 2]
+    const segParts = segLine.split(' ')
+    // "0 <p0> <p1> <bf>"
+    expect(segParts[1]).toBe('1')
+    expect(segParts[2]).toBe('2')
   })
 
   test('loadDocument auto-ensures materials for mattypes used in faceTypes', () => {

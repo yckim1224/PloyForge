@@ -1,6 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { CollapsibleSection } from '../components/CollapsibleSection'
 import { EntityTable, type Column } from '../components/EntityTable'
+import { SelectionBar } from '../components/SelectionBar'
+import { InputModal } from '../components/InputModal'
 import { useEditorStore } from '../store/editorStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { materialColor } from '../constants/materials'
@@ -14,11 +16,19 @@ function formatPaths(face: Face, pointIndex: Map<string, number>): string {
   return `${indices.slice(0, PATHS_MAX).join('→')}…`
 }
 
+function parseIntOrNull(raw: string): number | null {
+  if (raw.trim() === '') return null
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 0) return null
+  return n
+}
+
 export function FacesSection() {
   const faces = useEditorStore((s) => s.faces)
   const points = useEditorStore((s) => s.points)
   const faceIds = useEditorStore((s) => s.selection.faceIds)
   const materials = useSettingsStore((s) => s.materials)
+  const [setTypeModal, setSetTypeModal] = useState(false)
 
   const selectedIds = useMemo(() => new Set(faceIds), [faceIds])
   const pointIndex = useMemo(() => {
@@ -60,6 +70,19 @@ export function FacesSection() {
             <span>{f.mattype ?? '—'}</span>
           </span>
         ),
+        edit: {
+          type: 'number',
+          allowEmpty: true,
+          parse: parseIntOrNull,
+          seed: (f) => (f.mattype === undefined ? '' : String(f.mattype)),
+          onCommit: (f, _idx, v) => {
+            const size = f.size ?? -1
+            useEditorStore.getState().setFaceType(f.id, v, size)
+          },
+          onClear: (f) => {
+            useEditorStore.getState().clearFaceType(f.id)
+          },
+        },
       },
     ]
   }, [pointIndex, materials])
@@ -84,6 +107,60 @@ export function FacesSection() {
         selectedIds={selectedIds}
         onToggleRow={onToggleRow}
         onToggleAll={onToggleAll}
+      />
+      <SelectionBar
+        count={faceIds.length}
+        noun="face"
+        items={[
+          {
+            key: 'set-type',
+            label: 'Set type…',
+            onSelect: () => setSetTypeModal(true),
+          },
+          {
+            key: 'clear-type',
+            label: 'Clear type',
+            onSelect: () => {
+              const store = useEditorStore.getState()
+              for (const fid of faceIds) store.clearFaceType(fid)
+            },
+          },
+        ]}
+      />
+      <InputModal
+        open={setTypeModal}
+        title="Set face type"
+        fields={[
+          {
+            key: 'mattype',
+            label: 'Material type (mattype)',
+            type: 'number',
+            initialValue: 0,
+            min: 0,
+            step: 1,
+            required: true,
+          },
+          {
+            key: 'size',
+            label: 'Max element size (-1 = unlimited)',
+            type: 'number',
+            initialValue: -1,
+            step: 0.1,
+          },
+        ]}
+        onCancel={() => setSetTypeModal(false)}
+        onConfirm={(values) => {
+          const mattype = values.mattype
+          const size = values.size
+          if (typeof mattype !== 'number') {
+            setSetTypeModal(false)
+            return
+          }
+          const store = useEditorStore.getState()
+          const sizeNum = typeof size === 'number' ? size : -1
+          for (const fid of faceIds) store.setFaceType(fid, mattype, sizeNum)
+          setSetTypeModal(false)
+        }}
       />
     </CollapsibleSection>
   )

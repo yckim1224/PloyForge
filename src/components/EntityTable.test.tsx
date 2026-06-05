@@ -123,4 +123,36 @@ describe('EntityTable', () => {
     expect(header.checked).toBe(true)
     expect(header.indeterminate).toBe(false)
   })
+
+  test('row toggle is suppressed on the click that initiates a dblclick on an editable cell', () => {
+    const onToggleRow = vi.fn()
+    const EDITABLE: Column<Row>[] = [
+      {
+        key: 'label',
+        header: 'Label',
+        render: (r) => r.label,
+        edit: {
+          type: 'number',
+          parse: (raw) => {
+            const n = Number(raw)
+            return Number.isFinite(n) ? n : null
+          },
+          onCommit: () => {},
+        },
+      },
+    ]
+    render(
+      <EntityTable
+        columns={EDITABLE}
+        rows={ROWS}
+        selectedIds={new Set()}
+        onToggleRow={onToggleRow}
+        onToggleAll={() => {}}
+      />,
+    )
+    // detail >= 2 marks the click as part of a double-click; an editable cell
+    // entering edit mode must not also toggle the row selection.
+    fireEvent.click(screen.getByText('alpha'), { detail: 2 })
+    expect(onToggleRow).not.toHaveBeenCalled()
+  })
 })

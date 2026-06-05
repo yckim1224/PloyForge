@@ -77,9 +77,27 @@ export interface EditorState {
 
   // Geometry mutations
   addPoint: (x: number, z: number) => string
+  /**
+   * Insert a point at a specific display position. `index === null` or
+   * `>= points.length` appends (delegates to addPoint logic). Otherwise the
+   * point is spliced so existing items shift right; line p0/p1 uids are
+   * preserved (only display indices change).
+   */
+  insertPoint: (index: number | null, x: number, z: number) => string
   movePoint: (id: string, x: number, z: number) => void
   updatePoint: (id: string, patch: Partial<Pick<Point, 'x' | 'z'>>) => void
   addLine: (p0: string, p1: string, bdryFlag?: number) => string | null
+  /**
+   * Insert a line at a specific display position. Validation matches
+   * `addLine` (self-loops and duplicate pairs rejected). Returns the new uid
+   * or null when rejected.
+   */
+  insertLine: (
+    index: number | null,
+    p0: string,
+    p1: string,
+    bdryFlag?: number,
+  ) => string | null
   /**
    * Split every line at any point lying on its interior (T-junction noding),
    * so polygonize sees a conforming PSLG. Returns true if anything was split.
@@ -92,7 +110,7 @@ export interface EditorState {
     z2: number,
     autoCreate: boolean,
   ) => AddLineResult
-  updateLine: (id: string, patch: Partial<Pick<Line, 'bdryFlag'>>) => void
+  updateLine: (id: string, patch: Partial<Pick<Line, 'bdryFlag' | 'p0' | 'p1'>>) => void
   setLineFlag: (ids: string[], flag: number) => void
   autoAssignBoundaryFlags: (ids?: string[]) => void
   removePoints: (ids: string[]) => void
@@ -245,6 +263,21 @@ export const useEditorStore = create<EditorState>()(
     return id
   },
 
+  insertPoint: (index, x, z) => {
+    // Dedupe matches addPoint's existing-coordinate fast path so callers can
+    // rely on idempotent inserts.
+    const existing = findPointByCoord(get().points, x, z)
+    if (existing) return existing.id
+    const points = get().points
+    const append = index === null || index >= points.length
+    if (append) return get().addPoint(x, z)
+    const id = uid('p')
+    const k = Math.max(0, index as number)
+    set((s) => ({ points: [...s.points.slice(0, k), { id, x, z }, ...s.points.slice(k)] }))
+    if (get().renode()) get().recomputeFaces()
+    return id
+  },
+
   movePoint: (id, x, z) => {
     set((s) => ({
       points: s.points.map((p) => (p.id === id ? { ...p, x, z } : p)),
@@ -267,6 +300,22 @@ export const useEditorStore = create<EditorState>()(
     const id = uid('s')
     set((s) => ({ lines: [...s.lines, { id, p0, p1, bdryFlag }] }))
     // The new line may pass through existing points; node it before meshing.
+    get().renode()
+    get().recomputeFaces()
+    return id
+  },
+
+  insertLine: (index, p0, p1, bdryFlag = 0) => {
+    if (p0 === p1) return null
+    if (lineExists(get().lines, p0, p1)) return null
+    const lines = get().lines
+    const append = index === null || index >= lines.length
+    if (append) return get().addLine(p0, p1, bdryFlag)
+    const id = uid('s')
+    const k = Math.max(0, index as number)
+    set((s) => ({
+      lines: [...s.lines.slice(0, k), { id, p0, p1, bdryFlag }, ...s.lines.slice(k)],
+    }))
     get().renode()
     get().recomputeFaces()
     return id
@@ -356,6 +405,12 @@ export const useEditorStore = create<EditorState>()(
     set((s) => ({
       lines: s.lines.map((seg) => (seg.id === id ? { ...seg, ...patch } : seg)),
     }))
+    // Endpoint swaps change topology; flag-only edits don't, but renode
+    // short-circuits when nothing intersects, so a single guarded call is fine.
+    if (patch.p0 !== undefined || patch.p1 !== undefined) {
+      get().renode()
+      get().recomputeFaces()
+    }
   },
 
   setLineFlag: (ids, flag) => {

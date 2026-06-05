@@ -1,32 +1,41 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { CollapsibleSection } from '../components/CollapsibleSection'
 import { EntityTable, type Column } from '../components/EntityTable'
+import { AddRow, type AddRowField } from '../components/AddRow'
+import { SelectionBar } from '../components/SelectionBar'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { useEditorStore } from '../store/editorStore'
 import type { Point } from '../types'
 
-const COLUMNS: Column<Point>[] = [
+function parseFloatOrNull(raw: string): number | null {
+  if (raw.trim() === '') return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
+function parseIntOrNull(raw: string): number | null {
+  if (raw.trim() === '') return null
+  const n = Number(raw)
+  if (!Number.isInteger(n)) return null
+  return n
+}
+
+const ADD_FIELDS: AddRowField[] = [
   {
     key: 'id',
-    header: 'ID',
-    render: (_p, idx) => idx,
-    className: 'w-10 text-neutral-500',
+    placeholder: 'ID (blank = end)',
+    type: 'number',
+    parse: parseIntOrNull,
   },
-  {
-    key: 'x',
-    header: 'X',
-    render: (p) => p.x.toFixed(1),
-  },
-  {
-    key: 'z',
-    header: 'Z',
-    render: (p) => p.z.toFixed(1),
-  },
+  { key: 'x', placeholder: 'X', type: 'number', parse: parseFloatOrNull, required: true },
+  { key: 'z', placeholder: 'Z', type: 'number', parse: parseFloatOrNull, required: true },
 ]
 
 export function PointsSection() {
   const points = useEditorStore((s) => s.points)
   const pointIds = useEditorStore((s) => s.selection.pointIds)
   const selectedIds = useMemo(() => new Set(pointIds), [pointIds])
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const onToggleRow = (id: string, additive: boolean) => {
     const store = useEditorStore.getState()
@@ -40,14 +49,80 @@ export function PointsSection() {
     else store.selectMany('point', points.map((p) => p.id))
   }
 
+  const columns: Column<Point>[] = useMemo(
+    () => [
+      {
+        key: 'id',
+        header: 'ID',
+        render: (_p, idx) => idx,
+        className: 'w-10 text-neutral-500',
+      },
+      {
+        key: 'x',
+        header: 'X',
+        render: (p) => p.x.toFixed(1),
+        edit: {
+          type: 'number',
+          parse: parseFloatOrNull,
+          onCommit: (p, _idx, v) => useEditorStore.getState().updatePoint(p.id, { x: v }),
+        },
+      },
+      {
+        key: 'z',
+        header: 'Z',
+        render: (p) => p.z.toFixed(1),
+        edit: {
+          type: 'number',
+          parse: parseFloatOrNull,
+          onCommit: (p, _idx, v) => useEditorStore.getState().updatePoint(p.id, { z: v }),
+        },
+      },
+    ],
+    [],
+  )
+
+  const onAdd = (values: Record<string, number | null>) => {
+    const x = values.x
+    const z = values.z
+    if (x === null || z === null) return { ok: false, error: 'X and Z are required' }
+    const idx = values.id
+    useEditorStore.getState().insertPoint(idx, x, z)
+    return { ok: true }
+  }
+
   return (
     <CollapsibleSection title="Points" count={points.length}>
       <EntityTable
-        columns={COLUMNS}
+        columns={columns}
         rows={points}
         selectedIds={selectedIds}
         onToggleRow={onToggleRow}
         onToggleAll={onToggleAll}
+      />
+      <AddRow fields={ADD_FIELDS} onAdd={onAdd} />
+      <SelectionBar
+        count={pointIds.length}
+        noun="point"
+        items={[
+          {
+            key: 'delete',
+            label: 'Delete all selected',
+            destructive: true,
+            onSelect: () => setConfirmDelete(true),
+          },
+        ]}
+      />
+      <ConfirmModal
+        open={confirmDelete}
+        title="Delete points"
+        message={`Delete ${pointIds.length} selected point${pointIds.length === 1 ? '' : 's'}? Incident lines will be removed as well.`}
+        destructive
+        confirmLabel="Delete"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          useEditorStore.getState().removePoints(pointIds)
+          setConfirmDelete(false)
+        }}
       />
     </CollapsibleSection>
   )

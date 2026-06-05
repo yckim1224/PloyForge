@@ -12,6 +12,7 @@ import { useEditorStore } from '../store/editorStore'
 import { serializePoly } from '../poly/serialize'
 import { parsePoly } from '../poly/parse'
 import { validateDocument, type ValidationIssue } from '../poly/validate'
+import { ConfirmModal } from '../components/ConfirmModal'
 
 export function AppActions() {
   const toDocument = useEditorStore((s) => s.toDocument)
@@ -21,6 +22,7 @@ export function AppActions() {
   const [warnings, setWarnings] = useState<string[]>([])
   const [importError, setImportError] = useState<string | null>(null)
   const [exportWarning, setExportWarning] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const onImportClick = () => fileRef.current?.click()
 
@@ -80,15 +82,16 @@ export function AppActions() {
     console.info('Settings UI lands in Phase 3')
   }
 
-  const onClear = () => {
-    const ok = window.confirm('Clear the current document? This cannot be undone.')
-    if (!ok) return
+  const onClear = () => setConfirmClear(true)
+
+  const doClear = () => {
     useEditorStore.getState().reset()
     useEditorStore.temporal.getState().clear()
     setWarnings([])
     setIssues(null)
     setImportError(null)
     setExportWarning(null)
+    setConfirmClear(false)
   }
 
   const errorCount = issues?.filter((i) => i.level === 'error').length ?? 0
@@ -150,6 +153,16 @@ export function AppActions() {
           ))}
         </ul>
       )}
+
+      <ConfirmModal
+        open={confirmClear}
+        title="Clear document"
+        message="Clear the current document? This cannot be undone."
+        destructive
+        confirmLabel="Clear"
+        onCancel={() => setConfirmClear(false)}
+        onConfirm={doClear}
+      />
 
       {issues && issues.length > 0 && (
         <ul className="flex flex-col gap-1 text-xs">
