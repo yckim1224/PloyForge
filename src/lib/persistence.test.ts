@@ -1,23 +1,23 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { loadPersisted, savePersisted } from './persistence'
-import { defaultDomain } from './defaults'
-import { useSettingsStore, defaultSettings } from '../store/settingsStore'
+import { useSettingsStore, defaultGrid, defaultSettings } from '../store/settingsStore'
 
 const KEY_V1 = 'poly-forge:doc:v1'
 const KEY_V2 = 'poly-forge:doc:v2'
+const KEY_V3 = 'poly-forge:doc:v3'
+const KEY_V2_BACKUP = 'poly-forge:doc:v2.backup'
 const KEY_V1_BACKUP = 'poly-forge:doc:v1.backup'
 const KEY_V1_ORPHANS = 'poly-forge:doc:v1.orphans'
 
 beforeEach(() => {
   localStorage.clear()
-  // Reset settings between tests so material-merge assertions start clean.
+  // Reset settings between tests so material-merge / grid-spacing assertions start clean.
   useSettingsStore.getState().hydrate(defaultSettings())
 })
 
 describe('persistence', () => {
   test('round-trips a complete document', () => {
     const doc = {
-      domain: defaultDomain(),
       points: [{ id: 'p1', x: 0, z: 0 }],
       lines: [],
       faceTypes: {},
@@ -27,14 +27,14 @@ describe('persistence', () => {
   })
 
   test('rejects a partial document missing fields', () => {
-    localStorage.setItem(KEY_V2, JSON.stringify({ points: [] }))
+    localStorage.setItem(KEY_V3, JSON.stringify({ points: [] }))
     expect(loadPersisted()).toBeNull()
   })
 
   test('rejects a non-object / malformed value', () => {
-    localStorage.setItem(KEY_V2, 'not json{')
+    localStorage.setItem(KEY_V3, 'not json{')
     expect(loadPersisted()).toBeNull()
-    localStorage.setItem(KEY_V2, JSON.stringify(null))
+    localStorage.setItem(KEY_V3, JSON.stringify(null))
     expect(loadPersisted()).toBeNull()
   })
 
@@ -42,10 +42,71 @@ describe('persistence', () => {
     expect(loadPersisted()).toBeNull()
   })
 
-  test('migrates v1 (segments + regions inside faces) into faceTypes', () => {
+  test('v2 -> v3 migration drops domain and lifts gridSpacing into settings.grid.spacing', () => {
+    const v2 = {
+      domain: {
+        xmin: 0,
+        xmax: 1000,
+        zmin: -1000,
+        zmax: 0,
+        gridSpacing: 12345,
+        meshingOption: 90,
+        resolution: 500,
+      },
+      points: [{ id: 'p1', x: 0, z: 0 }],
+      lines: [],
+      faceTypes: {},
+    }
+    localStorage.setItem(KEY_V2, JSON.stringify(v2))
+    const loaded = loadPersisted()
+    expect(loaded).not.toBeNull()
+    expect(loaded).toEqual({ points: v2.points, lines: [], faceTypes: {} })
+    // No `domain` field on the loaded doc.
+    expect((loaded as unknown as Record<string, unknown>).domain).toBeUndefined()
+    // grid.spacing now carries the migrated v2 value.
+    expect(useSettingsStore.getState().grid.spacing).toBe(12345)
+    // The migrated document is persisted under the v3 key.
+    expect(localStorage.getItem(KEY_V3)).not.toBeNull()
+  })
+
+  test('v2 -> v3 migration preserves grid.spacing when settings were already hydrated', () => {
+    // Simulate the real-world flow: App.tsx restored persisted settings first
+    // (whatever their value), so the loader is told `settingsHydrated: true`.
+    useSettingsStore.getState().setGrid({ spacing: 999 })
+
+    const v2 = {
+      domain: { xmin: 0, xmax: 10, zmin: -10, zmax: 0, gridSpacing: 7777, meshingOption: 90, resolution: 1 },
+      points: [],
+      lines: [],
+      faceTypes: {},
+    }
+    localStorage.setItem(KEY_V2, JSON.stringify(v2))
+    loadPersisted({ settingsHydrated: true })
+    // User customization wins; v2 gridSpacing is dropped.
+    expect(useSettingsStore.getState().grid.spacing).toBe(999)
+  })
+
+  test('v2 -> v3 migration leaves untouched defaults alone when settings were hydrated', () => {
+    // A returning user with persisted settings still at the default 25000 must
+    // NOT be silently overwritten -- the previous heuristic conflated
+    // "default" with "untouched" and would have clobbered.
+    useSettingsStore.getState().setGrid({ spacing: 25_000 })
+
+    const v2 = {
+      domain: { xmin: 0, xmax: 1, zmin: -1, zmax: 0, gridSpacing: 12345 },
+      points: [],
+      lines: [],
+      faceTypes: {},
+    }
+    localStorage.setItem(KEY_V2, JSON.stringify(v2))
+    loadPersisted({ settingsHydrated: true })
+    expect(useSettingsStore.getState().grid.spacing).toBe(25_000)
+  })
+
+  test('migrates v1 (segments + regions inside faces) into faceTypes, then v3', () => {
     // Closed unit-square -> one face containing seed (50, -50).
     const v1Doc = {
-      domain: defaultDomain(),
+      domain: { xmin: 0, xmax: 100, zmin: -100, zmax: 0, gridSpacing: 50, meshingOption: 90, resolution: 25 },
       points: [
         { id: 'a', x: 0, z: 0 },
         { id: 'b', x: 100, z: 0 },
@@ -68,8 +129,10 @@ describe('persistence', () => {
     expect(Object.keys(loaded!.faceTypes).length).toBe(1)
     const [spec] = Object.values(loaded!.faceTypes)
     expect(spec).toEqual({ mattype: 4, size: -1 })
-    // Migrated document is persisted under the v2 key.
-    expect(localStorage.getItem(KEY_V2)).not.toBeNull()
+    // The migrated document is persisted under the v3 key.
+    expect(localStorage.getItem(KEY_V3)).not.toBeNull()
+    // v1.domain.gridSpacing flowed through the v2 intermediate into settings.
+    expect(useSettingsStore.getState().grid.spacing).toBe(50)
     // Materials moved into the settings store with their v1 color/label.
     const settings = useSettingsStore.getState()
     const m = settings.materials.find((x) => x.mattype === 4)
@@ -80,7 +143,7 @@ describe('persistence', () => {
 
   test('v1 orphan region: stashed to localStorage v1.orphans + warning', () => {
     const v1Doc = {
-      domain: defaultDomain(),
+      domain: { xmin: 0, xmax: 100, zmin: -100, zmax: 0, gridSpacing: 25, meshingOption: 90, resolution: 10 },
       points: [
         { id: 'a', x: 0, z: 0 },
         { id: 'b', x: 100, z: 0 },
@@ -124,7 +187,7 @@ describe('persistence', () => {
     settings.setMaterial(1, { color: '#00ffff', label: 'preexisting' })
 
     const v1Doc = {
-      domain: defaultDomain(),
+      domain: { xmin: 0, xmax: 1, zmin: -1, zmax: 0, gridSpacing: defaultGrid().spacing, meshingOption: 90, resolution: 1 },
       points: [{ id: 'p', x: 0, z: 0 }],
       segments: [],
       regions: [],
@@ -151,6 +214,18 @@ describe('persistence', () => {
     try {
       expect(loadPersisted()).toBeNull()
       expect(localStorage.getItem(KEY_V1_BACKUP)).toBe(corrupt)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  test('on v2 corruption: backs up the raw v2 value and returns null', () => {
+    const corrupt = JSON.stringify({ points: [], lines: [] }) // missing domain
+    localStorage.setItem(KEY_V2, corrupt)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(loadPersisted()).toBeNull()
+      expect(localStorage.getItem(KEY_V2_BACKUP)).toBe(corrupt)
     } finally {
       warn.mockRestore()
     }

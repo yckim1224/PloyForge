@@ -100,4 +100,37 @@ describe('settingsStore', () => {
     localStorage.setItem('poly-forge:settings:v1', JSON.stringify({ grid: {} }))
     expect(loadSettings()).toBeNull()
   })
+
+  test('defaultGrid().spacing is 25_000 and setGrid({ spacing }) round-trips', () => {
+    expect(defaultGrid().spacing).toBe(25_000)
+    useSettingsStore.getState().setGrid({ spacing: 5000 })
+    expect(useSettingsStore.getState().grid.spacing).toBe(5000)
+
+    const snapshot = {
+      grid: useSettingsStore.getState().grid,
+      point: useSettingsStore.getState().point,
+      line: useSettingsStore.getState().line,
+      materials: useSettingsStore.getState().materials,
+    }
+    saveSettings(snapshot)
+    useSettingsStore.getState().hydrate(defaultSettings())
+    const loaded = loadSettings()
+    expect(loaded).not.toBeNull()
+    expect(loaded!.grid.spacing).toBe(5000)
+  })
+
+  test('loadSettings backfills grid.spacing for legacy persisted settings', () => {
+    // A pre-spacing settings blob (missing grid.spacing).
+    const legacy = {
+      grid: { lineColor: '#abcdef', lineWidth: 2, show: true },
+      point: defaultPoint(),
+      line: defaultLine(),
+      materials: [],
+    }
+    localStorage.setItem('poly-forge:settings:v1', JSON.stringify(legacy))
+    const loaded = loadSettings()
+    expect(loaded).not.toBeNull()
+    expect(loaded!.grid.spacing).toBe(defaultGrid().spacing)
+    expect(loaded!.grid.lineColor).toBe('#abcdef')
+  })
 })

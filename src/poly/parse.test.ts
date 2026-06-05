@@ -84,14 +84,9 @@ describe('parsePoly — invariants across all samples', () => {
     expect(discoveredMaterials).toEqual([0, 1])
   })
 
-  test('inferred domain bounds enclose all points', () => {
+  test('parsed document no longer carries a `domain` field', () => {
     const { doc } = parsePoly(sample('rifting-2d'))
-    for (const p of doc.points) {
-      expect(p.x).toBeGreaterThanOrEqual(doc.domain.xmin)
-      expect(p.x).toBeLessThanOrEqual(doc.domain.xmax)
-      expect(p.z).toBeGreaterThanOrEqual(doc.domain.zmin)
-      expect(p.z).toBeLessThanOrEqual(doc.domain.zmax)
-    }
+    expect((doc as unknown as Record<string, unknown>).domain).toBeUndefined()
   })
 })
 

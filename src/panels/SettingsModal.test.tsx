@@ -24,8 +24,8 @@ describe('SettingsModal', () => {
     expect(screen.getByText('Point')).toBeTruthy()
     expect(screen.getByText('Line')).toBeTruthy()
     expect(screen.getByText('Materials')).toBeTruthy()
-    // Domain & Meshing lives in the side panel (DomainSection), not Settings.
-    expect(screen.queryByText('Domain & Meshing')).toBeNull()
+    // The Domain section was removed entirely; no Domain controls anywhere.
+    expect(screen.queryByText(/Domain/)).toBeNull()
   })
 
   test('Done button invokes onClose', () => {
@@ -51,5 +51,25 @@ describe('SettingsModal', () => {
     expect(useSettingsStore.getState().grid.lineWidth).toBe(defaultSettings().grid.lineWidth)
     // Materials are preserved.
     expect(useSettingsStore.getState().materials.some((m) => m.mattype === 7)).toBe(true)
+  })
+
+  test('Grid spacing field commits a positive value to settingsStore.grid.spacing', () => {
+    render(<SettingsModal open onClose={() => {}} />)
+    const label = screen.getByText('Grid spacing (m)')
+    const input = label.parentElement?.querySelector('input') as HTMLInputElement
+    expect(input).toBeTruthy()
+    fireEvent.change(input, { target: { value: '4321' } })
+    fireEvent.blur(input)
+    expect(useSettingsStore.getState().grid.spacing).toBe(4321)
+  })
+
+  test('Grid spacing field rejects non-positive values', () => {
+    useSettingsStore.getState().setGrid({ spacing: 100 })
+    render(<SettingsModal open onClose={() => {}} />)
+    const label = screen.getByText('Grid spacing (m)')
+    const input = label.parentElement?.querySelector('input') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '0' } })
+    fireEvent.blur(input)
+    expect(useSettingsStore.getState().grid.spacing).toBe(100)
   })
 })

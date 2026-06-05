@@ -107,8 +107,7 @@ describe('editorStore', () => {
     expect(store().pendingLineStart).toBeNull()
   })
 
-  test('autoAssignBoundaryFlags sets left/right/bottom/top from the domain extent', () => {
-    store().setDomain({ xmin: 0, xmax: 100, zmin: -100, zmax: 0 })
+  test('autoAssignBoundaryFlags derives left/right/bottom/top from the points bbox', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)
     const c = store().addPoint(100, -100)
@@ -134,7 +133,6 @@ describe('editorStore', () => {
   })
 
   test('setFaceType writes a faceTypes entry and ensures the material color', () => {
-    store().setDomain({ xmin: 0, xmax: 100, zmin: -100, zmax: 0 })
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)
     const c = store().addPoint(100, -100)
@@ -206,7 +204,7 @@ describe('editorStore', () => {
   })
 
   test('nudgeSelection moves selected points by one grid step (10x with Shift)', () => {
-    store().setDomain({ gridSpacing: 100 })
+    useSettingsStore.getState().setGrid({ spacing: 100 })
     const a = store().addPoint(0, 0)
     store().selectSingle('point', a)
     store().nudgeSelection(1, 0, false) // right
@@ -218,7 +216,7 @@ describe('editorStore', () => {
   })
 
   test('nudgeSelection moves both endpoints of a selected segment', () => {
-    store().setDomain({ gridSpacing: 100 })
+    useSettingsStore.getState().setGrid({ spacing: 100 })
     const a = store().addPoint(0, 0)
     const b = store().addPoint(200, 0)
     const s = store().addLine(a, b)!
@@ -229,7 +227,7 @@ describe('editorStore', () => {
   })
 
   test('nudgeSelection is a no-op without a selection', () => {
-    store().setDomain({ gridSpacing: 100 })
+    useSettingsStore.getState().setGrid({ spacing: 100 })
     const a = store().addPoint(0, 0)
     store().clearSelection()
     store().nudgeSelection(1, 0, false)
@@ -259,7 +257,7 @@ describe('editorStore', () => {
   })
 
   test('nudgeSelection preserves a face Type when its vertices translate together (A-22)', () => {
-    store().setDomain({ gridSpacing: 10, xmin: 0, xmax: 200, zmin: -200, zmax: 0 })
+    useSettingsStore.getState().setGrid({ spacing: 10 })
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)
     const c = store().addPoint(100, -100)

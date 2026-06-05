@@ -1,16 +1,32 @@
 import { create } from 'zustand'
 import { temporal } from 'zundo'
-import type { Domain, Face, Line, Point, PolyDocument } from '../types'
+import type { Face, Line, Point, PolyDocument } from '../types'
 import { uid } from '../lib/id'
 import {
   coordKey,
   pointOnSegment,
   projectToSegment,
 } from '../lib/geometry'
-import { defaultDomain } from '../lib/defaults'
-import { autoBoundaryFlag } from '../poly/boundary'
+import { autoBoundaryFlag, type BoundingBox } from '../poly/boundary'
 import { detectFaces } from '../poly/faces'
 import { useSettingsStore } from './settingsStore'
+
+/** Convex envelope of the supplied points; an empty array yields a zero-extent box at the origin. */
+function pointsBoundingBox(points: Point[]): BoundingBox {
+  if (points.length === 0) return { xmin: 0, xmax: 0, zmin: 0, zmax: 0 }
+  let xmin = points[0].x
+  let xmax = xmin
+  let zmin = points[0].z
+  let zmax = zmin
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i]
+    if (p.x < xmin) xmin = p.x
+    else if (p.x > xmax) xmax = p.x
+    if (p.z < zmin) zmin = p.z
+    else if (p.z > zmax) zmax = p.z
+  }
+  return { xmin, xmax, zmin, zmax }
+}
 
 export type Tool = 'select' | 'point' | 'line' | 'pan'
 export type SelectableKind = 'point' | 'line' | 'face'
@@ -41,7 +57,6 @@ export interface AddLineResult {
 }
 
 export interface EditorState {
-  domain: Domain
   points: Point[]
   lines: Line[]
   /** Face-keyed material/size map. Stale keys (no matching face) are kept; they
@@ -55,7 +70,7 @@ export interface EditorState {
   marqueeTarget: MarqueeTarget
   /** Point id of the in-progress line's first endpoint (line tool). */
   pendingLineStart: string | null
-  /** Bumped to ask the canvas to fit the view to the domain. */
+  /** Bumped to ask the canvas to fit the view to the current points. */
   fitNonce: number
 
   // View & tools
@@ -120,9 +135,6 @@ export interface EditorState {
   setFaceType: (faceId: string, mattype: number, size?: number) => void
   clearFaceType: (faceId: string) => void
 
-  // Domain
-  setDomain: (patch: Partial<Domain>) => void
-
   // Selection
   setSelection: (sel: Partial<Selection>) => void
   clearSelection: () => void
@@ -147,7 +159,6 @@ function lineExists(lines: Line[], a: string, b: string): boolean {
 export const useEditorStore = create<EditorState>()(
   temporal(
     (set, get) => ({
-  domain: defaultDomain(),
   points: [],
   lines: [],
   faceTypes: {},
@@ -224,7 +235,8 @@ export const useEditorStore = create<EditorState>()(
     const sel = s.selection
     const hasSel = sel.pointIds.length || sel.lineIds.length || sel.faceIds.length
     if (!hasSel) return
-    const step = s.domain.gridSpacing * (large ? 10 : 1)
+    const spacing = useSettingsStore.getState().grid.spacing
+    const step = spacing * (large ? 10 : 1)
     const dx = dirX * step
     const dz = dirZ * step
 
@@ -421,7 +433,15 @@ export const useEditorStore = create<EditorState>()(
   },
 
   autoAssignBoundaryFlags: (ids) => {
-    const { points, domain } = get()
+    const { points } = get()
+    if (points.length === 0) {
+      const target = ids ? new Set(ids) : null
+      set((s) => ({
+        lines: s.lines.map((seg) => (target && !target.has(seg.id) ? seg : { ...seg, bdryFlag: 0 })),
+      }))
+      return
+    }
+    const bbox = pointsBoundingBox(points)
     const byId = new Map(points.map((p) => [p.id, p]))
     const target = ids ? new Set(ids) : null
     set((s) => ({
@@ -430,7 +450,7 @@ export const useEditorStore = create<EditorState>()(
         const a = byId.get(seg.p0)
         const b = byId.get(seg.p1)
         if (!a || !b) return seg
-        return { ...seg, bdryFlag: autoBoundaryFlag(a, b, domain) }
+        return { ...seg, bdryFlag: autoBoundaryFlag(a, b, bbox) }
       }),
     }))
   },
@@ -482,15 +502,12 @@ export const useEditorStore = create<EditorState>()(
     get().recomputeFaces()
   },
 
-  setDomain: (patch) => set((s) => ({ domain: { ...s.domain, ...patch } })),
-
   setSelection: (sel) => set((s) => ({ selection: { ...s.selection, ...sel } })),
 
   clearSelection: () => set({ selection: emptySelection() }),
 
   loadDocument: (doc, discoveredMaterials) => {
     set((s) => ({
-      domain: doc.domain,
       points: doc.points,
       lines: doc.lines,
       faceTypes: doc.faceTypes ?? {},
@@ -512,7 +529,6 @@ export const useEditorStore = create<EditorState>()(
   toDocument: () => {
     const s = get()
     return {
-      domain: s.domain,
       points: s.points,
       lines: s.lines,
       faceTypes: s.faceTypes,
@@ -521,7 +537,6 @@ export const useEditorStore = create<EditorState>()(
 
   reset: () =>
     set({
-      domain: defaultDomain(),
       points: [],
       lines: [],
       faceTypes: {},
@@ -533,7 +548,6 @@ export const useEditorStore = create<EditorState>()(
     {
       // Only geometry is undoable; selection/tool/faces are derived or transient.
       partialize: (s) => ({
-        domain: s.domain,
         points: s.points,
         lines: s.lines,
         faceTypes: s.faceTypes,
@@ -542,8 +556,7 @@ export const useEditorStore = create<EditorState>()(
       equality: (a, b) =>
         a.points === b.points &&
         a.lines === b.lines &&
-        a.faceTypes === b.faceTypes &&
-        a.domain === b.domain,
+        a.faceTypes === b.faceTypes,
       // A single user action calls set() several times (e.g. addLineByCoords ->
       // addPoint + addPoint + addLine). Record only the first change of each
       // synchronous burst so one action becomes exactly one undo step.

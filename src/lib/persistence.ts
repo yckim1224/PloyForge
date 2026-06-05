@@ -3,9 +3,10 @@ import { detectFaces } from '../poly/faces'
 import { pointInPolygon, type Vec2 } from '../lib/geometry'
 import { useSettingsStore } from '../store/settingsStore'
 
+const KEY_V3 = 'poly-forge:doc:v3'
 const KEY_V2 = 'poly-forge:doc:v2'
+const KEY_V2_BACKUP = 'poly-forge:doc:v2.backup'
 const KEY_V1 = 'poly-forge:doc:v1'
-const KEY_V1_BACKUP = 'poly-forge:doc:v1.backup'
 const KEY_V1_ORPHANS = 'poly-forge:doc:v1.orphans'
 
 interface LegacyRegion {
@@ -16,7 +17,27 @@ interface LegacyRegion {
   size: number
 }
 
-function isValidV2Shape(doc: unknown): doc is PolyDocument {
+/** Intermediate v2 shape used while migrating v1 -> v2 -> v3 in a single pass. */
+interface V2Document {
+  domain?: Record<string, unknown> | null
+  points: Point[]
+  lines: Line[]
+  faceTypes: Record<string, { mattype: number; size: number }>
+}
+
+function isValidV3Shape(doc: unknown): doc is PolyDocument {
+  if (!doc || typeof doc !== 'object') return false
+  const d = doc as Record<string, unknown>
+  return (
+    Array.isArray(d.points) &&
+    Array.isArray(d.lines) &&
+    // Forward-compat: treat missing faceTypes as {}.
+    (d.faceTypes === undefined ||
+      (typeof d.faceTypes === 'object' && d.faceTypes !== null && !Array.isArray(d.faceTypes)))
+  )
+}
+
+function isValidV2Shape(doc: unknown): doc is V2Document {
   if (!doc || typeof doc !== 'object') return false
   const d = doc as Record<string, unknown>
   return (
@@ -24,30 +45,55 @@ function isValidV2Shape(doc: unknown): doc is PolyDocument {
     Array.isArray(d.lines) &&
     typeof d.domain === 'object' &&
     d.domain !== null &&
-    // Forward-compat: treat missing faceTypes as {}.
     (d.faceTypes === undefined ||
       (typeof d.faceTypes === 'object' && d.faceTypes !== null && !Array.isArray(d.faceTypes)))
   )
 }
 
+/**
+ * Convert an in-memory v2-shaped object to v3 (no `domain` field) and lift
+ * `domain.gridSpacing` into `settingsStore.grid.spacing`. The lift only fires
+ * when `settingsHydrated === false`: a returning user with their own persisted
+ * settings already has the grid spacing they want, so we leave it alone.
+ */
+function migrateV2ToV3(v2: V2Document, settingsHydrated: boolean): PolyDocument {
+  const domain = (v2.domain ?? {}) as Record<string, unknown>
+  const gs = domain.gridSpacing
+  if (!settingsHydrated && typeof gs === 'number' && Number.isFinite(gs) && gs > 0) {
+    useSettingsStore.getState().setGrid({ spacing: gs })
+  }
+  return {
+    points: v2.points,
+    lines: v2.lines,
+    faceTypes: v2.faceTypes ?? {},
+  }
+}
+
 export function savePersisted(doc: PolyDocument): void {
   try {
-    localStorage.setItem(KEY_V2, JSON.stringify(doc))
+    localStorage.setItem(KEY_V3, JSON.stringify(doc))
   } catch {
     /* storage may be unavailable (private mode, quota); ignore */
   }
 }
 
-export function loadPersisted(): PolyDocument | null {
-  // Try v2 first.
+export interface LoadOptions {
+  /** True when the caller already restored persisted settings from storage.
+   *  When true, v2->v3 migration leaves settings.grid.spacing alone instead of
+   *  overwriting the user's customization with the legacy domain.gridSpacing. */
+  settingsHydrated?: boolean
+}
+
+export function loadPersisted(opts: LoadOptions = {}): PolyDocument | null {
+  const settingsHydrated = opts.settingsHydrated ?? false
+  // Try v3 first.
   try {
-    const rawV2 = localStorage.getItem(KEY_V2)
-    if (rawV2) {
-      const doc = JSON.parse(rawV2) as unknown
-      if (!isValidV2Shape(doc)) return null
+    const rawV3 = localStorage.getItem(KEY_V3)
+    if (rawV3) {
+      const doc = JSON.parse(rawV3) as unknown
+      if (!isValidV3Shape(doc)) return null
       const d = doc as PolyDocument & { faceTypes?: PolyDocument['faceTypes'] }
       return {
-        domain: d.domain,
         points: d.points,
         lines: d.lines,
         faceTypes: d.faceTypes ?? {},
@@ -57,7 +103,31 @@ export function loadPersisted(): PolyDocument | null {
     return null
   }
 
-  // Fall back to v1 with one-shot migration.
+  // Try v2 (one-shot migration to v3).
+  const rawV2 = localStorage.getItem(KEY_V2)
+  if (rawV2) {
+    try {
+      const parsed = JSON.parse(rawV2) as unknown
+      if (!isValidV2Shape(parsed)) throw new Error('v2 document has an invalid shape')
+      const migrated = migrateV2ToV3(parsed, settingsHydrated)
+      try {
+        localStorage.setItem(KEY_V3, JSON.stringify(migrated))
+      } catch {
+        /* persist failure is non-fatal; document still returns to caller */
+      }
+      return migrated
+    } catch (err) {
+      try {
+        localStorage.setItem(KEY_V2_BACKUP, rawV2)
+      } catch {
+        /* backup may also fail (quota); nothing else we can do */
+      }
+      console.warn('poly-forge: v2 -> v3 migration failed; starting empty.', err)
+      return null
+    }
+  }
+
+  // Fall back to v1 with a chained migration (v1 -> v2-shaped intermediate -> v3).
   const rawV1 = localStorage.getItem(KEY_V1)
   if (!rawV1) return null
   try {
@@ -129,25 +199,28 @@ export function loadPersisted(): PolyDocument | null {
       }
     }
 
-    const migrated: PolyDocument = {
-      domain: v1.domain as PolyDocument['domain'],
+    const intermediate: V2Document = {
+      domain: v1.domain as Record<string, unknown>,
       points,
       lines,
       faceTypes,
     }
+    const migrated = migrateV2ToV3(intermediate, settingsHydrated)
     try {
-      localStorage.setItem(KEY_V2, JSON.stringify(migrated))
+      localStorage.setItem(KEY_V3, JSON.stringify(migrated))
     } catch {
       /* persist failure is non-fatal; document still returns to caller */
     }
     return migrated
   } catch (err) {
     try {
-      localStorage.setItem(KEY_V1_BACKUP, rawV1)
+      // Keep historical key for backwards compat with any external tooling
+      // watching for the v1.backup key.
+      localStorage.setItem('poly-forge:doc:v1.backup', rawV1)
     } catch {
       /* backup may also fail (quota); nothing else we can do */
     }
-    console.warn('poly-forge: v1 -> v2 migration failed; starting empty.', err)
+    console.warn('poly-forge: v1 -> v3 migration failed; starting empty.', err)
     return null
   }
 }

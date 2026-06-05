@@ -1,20 +1,6 @@
 // Core domain types for the poly-forge 2D PSLG editor.
 // Coordinate convention: x is horizontal, z is depth (z <= 0, increasing downward).
 
-/** Cross-section domain extent and meshing parameters (not stored in the .poly file itself). */
-export interface Domain {
-  xmin: number
-  xmax: number
-  zmin: number
-  zmax: number
-  /** Snap-grid spacing in meters. */
-  gridSpacing: number
-  /** DES3D meshing_option: 90 = absolute element sizes, 91 = size as ratio to resolution. */
-  meshingOption: 90 | 91
-  /** Reference resolution in meters (used by meshing_option 91). */
-  resolution: number
-}
-
 export interface Point {
   id: string
   x: number
@@ -61,7 +47,6 @@ export interface Material {
  * `faceId` follows `face:${sorted-pointIds}` so it survives translations.
  */
 export interface PolyDocument {
-  domain: Domain
   points: Point[]
   lines: Line[]
   faceTypes: Record<string, { mattype: number; size: number }>

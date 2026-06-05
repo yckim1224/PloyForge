@@ -95,28 +95,10 @@ function App() {
     const persistedLayers = loadLayerVisibility()
     if (persistedLayers) useLayerStore.getState().hydrate(persistedLayers)
 
-    const doc = loadPersisted()
-    if (doc) {
-      useEditorStore.getState().loadDocument(doc)
-      useEditorStore.temporal.getState().clear()
-    }
-
-    const unsubDoc = useEditorStore.subscribe((s, prev) => {
-      if (
-        s.points !== prev.points ||
-        s.lines !== prev.lines ||
-        s.faceTypes !== prev.faceTypes ||
-        s.domain !== prev.domain
-      ) {
-        savePersisted({
-          domain: s.domain,
-          points: s.points,
-          lines: s.lines,
-          faceTypes: s.faceTypes,
-        })
-      }
-    })
-
+    // Register the settings subscriber BEFORE loadPersisted so the
+    // migration-driven setGrid (v2->v3 grid spacing lift) is captured and
+    // saved back to localStorage; otherwise the migrated spacing would
+    // silently vanish on the next reload.
     const unsubSettings = useSettingsStore.subscribe((s, prev) => {
       if (
         s.grid !== prev.grid ||
@@ -131,6 +113,26 @@ function App() {
           materials: s.materials,
         }
         saveSettings(snapshot)
+      }
+    })
+
+    const doc = loadPersisted({ settingsHydrated: persistedSettings !== null })
+    if (doc) {
+      useEditorStore.getState().loadDocument(doc)
+      useEditorStore.temporal.getState().clear()
+    }
+
+    const unsubDoc = useEditorStore.subscribe((s, prev) => {
+      if (
+        s.points !== prev.points ||
+        s.lines !== prev.lines ||
+        s.faceTypes !== prev.faceTypes
+      ) {
+        savePersisted({
+          points: s.points,
+          lines: s.lines,
+          faceTypes: s.faceTypes,
+        })
       }
     })
 

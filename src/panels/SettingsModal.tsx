@@ -149,6 +149,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     <Modal open={open} onClose={onClose} title="Settings">
       <div className="max-h-[70vh] overflow-y-auto pr-1">
         <Group title="Grid">
+          <Field label="Grid spacing (m)">
+            <NumberCell
+              value={grid.spacing}
+              onCommit={(v) => {
+                if (v > 0) setGrid({ spacing: v })
+              }}
+            />
+          </Field>
           <Field label="Line color">
             <ColorCell value={grid.lineColor} onChange={(v) => setGrid({ lineColor: v })} />
           </Field>

@@ -14,6 +14,8 @@ export interface GridSettings {
   lineColor: string
   lineWidth: number
   show: boolean
+  /** Snap-grid spacing in meters (also used for arrow-key nudge step). */
+  spacing: number
 }
 
 export interface PointSettings {
@@ -59,6 +61,7 @@ export function defaultGrid(): GridSettings {
     lineColor: '#e5e7eb',
     lineWidth: 1,
     show: true,
+    spacing: 25_000,
   }
 }
 
@@ -120,7 +123,15 @@ export function loadSettings(): AppSettings | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as unknown
     if (!isValidSettings(parsed)) return null
-    return parsed
+    // Backfill any field added after the v1 shape was minted (e.g. grid.spacing)
+    // so legacy persisted settings still hydrate to a complete shape.
+    const defaults = defaultSettings()
+    return {
+      ...parsed,
+      grid: { ...defaults.grid, ...parsed.grid },
+      point: { ...defaults.point, ...parsed.point },
+      line: { ...defaults.line, ...parsed.line },
+    }
   } catch {
     return null
   }

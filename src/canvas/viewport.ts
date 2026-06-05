@@ -1,4 +1,4 @@
-import type { Domain } from '../types'
+import type { Point } from '../types'
 
 /**
  * Viewport maps world coordinates (x in meters, z in meters with z<=0 downward)
@@ -53,15 +53,43 @@ export function zoomAt(v: Viewport, factor: number, sx: number, sy: number): Vie
   }
 }
 
-/** Fit the domain extent within (width, height) with padding, centered. */
-export function fitDomain(domain: Domain, width: number, height: number, pad = 48): Viewport {
-  const dw = domain.xmax - domain.xmin || 1
-  const dh = domain.zmax - domain.zmin || 1
+/** Fallback extent (meters) used by `fitPoints` when no points exist yet. */
+const FALLBACK_HALF_EXTENT = 100_000
+
+/**
+ * Fit the bounding box of `points` within (width, height) with padding, centered.
+ * Falls back to a 200km-wide square centered at the origin when `points` is empty.
+ */
+export function fitPoints(points: Point[], width: number, height: number, pad = 48): Viewport {
+  let xmin: number
+  let xmax: number
+  let zmin: number
+  let zmax: number
+  if (points.length === 0) {
+    xmin = -FALLBACK_HALF_EXTENT
+    xmax = FALLBACK_HALF_EXTENT
+    zmin = -FALLBACK_HALF_EXTENT
+    zmax = FALLBACK_HALF_EXTENT
+  } else {
+    xmin = points[0].x
+    xmax = xmin
+    zmin = points[0].z
+    zmax = zmin
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i]
+      if (p.x < xmin) xmin = p.x
+      else if (p.x > xmax) xmax = p.x
+      if (p.z < zmin) zmin = p.z
+      else if (p.z > zmax) zmax = p.z
+    }
+  }
+  const dw = xmax - xmin || 1
+  const dh = zmax - zmin || 1
   const sx = (width - 2 * pad) / dw
   const sy = (height - 2 * pad) / dh
   const scale = clamp(Math.min(sx, sy) || 1, MIN_SCALE, MAX_SCALE)
-  const cx = (domain.xmin + domain.xmax) / 2
-  const cz = (domain.zmin + domain.zmax) / 2
+  const cx = (xmin + xmax) / 2
+  const cz = (zmin + zmax) / 2
   return {
     scale,
     originX: width / 2 - cx * scale,

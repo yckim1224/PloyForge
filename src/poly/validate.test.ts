@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { validateDocument } from './validate'
 import { parsePoly } from './parse'
-import { defaultDomain } from '../lib/defaults'
 import type { PolyDocument } from '../types'
 import { SAMPLES } from '../samples'
 
@@ -18,7 +17,7 @@ function box(): PolyDocument {
     { id: 's2', p0: 'c', p1: 'd', bdryFlag: 16 },
     { id: 's3', p0: 'd', p1: 'a', bdryFlag: 1 },
   ]
-  return { domain: defaultDomain(), points, lines, faceTypes: {} }
+  return { points, lines, faceTypes: {} }
 }
 
 describe('validateDocument', () => {
@@ -30,7 +29,6 @@ describe('validateDocument', () => {
 
   test('errors when points exist but no closed face is detected', () => {
     const doc: PolyDocument = {
-      domain: defaultDomain(),
       // Two-point open line cannot form a face.
       points: [
         { id: 'a', x: 0, z: 0 },
@@ -45,7 +43,6 @@ describe('validateDocument', () => {
 
   test('does not error on an empty document', () => {
     const doc: PolyDocument = {
-      domain: defaultDomain(),
       points: [],
       lines: [],
       faceTypes: {},
@@ -70,7 +67,6 @@ describe('validateDocument', () => {
 
   test('warns on crossing segments', () => {
     const doc: PolyDocument = {
-      domain: defaultDomain(),
       points: [
         { id: 'a', x: 0, z: 0 },
         { id: 'b', x: 100, z: -100 },

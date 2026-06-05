@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'vitest'
-import { fitDomain, screenToWorld, worldToScreen, zoomAt } from './viewport'
+import { fitPoints, screenToWorld, worldToScreen, zoomAt } from './viewport'
 import { computeGridLines } from './grid'
-import { defaultDomain } from '../lib/defaults'
+import type { Point } from '../types'
+
+const SAMPLE_POINTS: Point[] = [
+  { id: 'a', x: 0, z: 0 },
+  { id: 'b', x: 500_000, z: 0 },
+  { id: 'c', x: 500_000, z: -150_000 },
+  { id: 'd', x: 0, z: -150_000 },
+]
 
 describe('viewport transforms', () => {
   const vp = { scale: 0.001, originX: 100, originY: 50 }
@@ -32,24 +39,34 @@ describe('viewport transforms', () => {
     expect(zoomed.scale).toBeCloseTo(vp.scale * 2, 12)
   })
 
-  test('fitDomain centers the domain within the viewport', () => {
-    const d = defaultDomain()
-    const v = fitDomain(d, 800, 600)
-    const center = worldToScreen(v, (d.xmin + d.xmax) / 2, (d.zmin + d.zmax) / 2)
+  test('fitPoints centers the bbox of the supplied points within the viewport', () => {
+    const v = fitPoints(SAMPLE_POINTS, 800, 600)
+    const xmin = 0
+    const xmax = 500_000
+    const zmin = -150_000
+    const zmax = 0
+    const center = worldToScreen(v, (xmin + xmax) / 2, (zmin + zmax) / 2)
     expect(center.sx).toBeCloseTo(400, 0)
     expect(center.sy).toBeCloseTo(300, 0)
-    // Domain fits inside the padded area.
-    const tl = worldToScreen(v, d.xmin, d.zmax)
+    // Bbox fits inside the padded area.
+    const tl = worldToScreen(v, xmin, zmax)
     expect(tl.sx).toBeGreaterThanOrEqual(0)
     expect(tl.sy).toBeGreaterThanOrEqual(0)
+  })
+
+  test('fitPoints falls back to a sensible centered extent for an empty document', () => {
+    const v = fitPoints([], 800, 600)
+    const center = worldToScreen(v, 0, 0)
+    expect(center.sx).toBeCloseTo(400, 0)
+    expect(center.sy).toBeCloseTo(300, 0)
+    expect(v.scale).toBeGreaterThan(0)
   })
 })
 
 describe('computeGridLines', () => {
   test('produces lines spanning the view and flags axis lines', () => {
-    const d = defaultDomain()
-    const v = fitDomain(d, 800, 600)
-    const lines = computeGridLines(v, 800, 600, d.gridSpacing)
+    const v = fitPoints(SAMPLE_POINTS, 800, 600)
+    const lines = computeGridLines(v, 800, 600, 25_000)
     expect(lines.length).toBeGreaterThan(0)
     expect(lines.some((l) => l.axis)).toBe(true)
   })

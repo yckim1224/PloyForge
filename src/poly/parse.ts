@@ -1,6 +1,5 @@
 import type { Line, Point, PolyDocument } from '../types'
 import { uid } from '../lib/id'
-import { inferDomain } from '../lib/defaults'
 import { detectFaces } from './faces'
 import { pointInPolygon, type Vec2 } from '../lib/geometry'
 
@@ -173,9 +172,8 @@ export function parsePoly(text: string): ParseResult {
     (a, b) => a - b,
   )
 
-  const domain = inferDomain(points)
   return {
-    doc: { domain, points, lines, faceTypes },
+    doc: { points, lines, faceTypes },
     warnings,
     discoveredMaterials,
   }

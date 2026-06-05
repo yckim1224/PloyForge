@@ -12,7 +12,7 @@ import { LayerOverlay } from './LayerOverlay'
 import { Crosshair, HelpCircle } from 'lucide-react'
 import { computeGridLines } from './grid'
 import {
-  fitDomain,
+  fitPoints,
   panBy,
   screenToWorld,
   worldToScreen,
@@ -97,7 +97,6 @@ export function EditorStage() {
   )
   const justMarqueed = useRef(false)
 
-  const domain = useEditorStore((s) => s.domain)
   const points = useEditorStore((s) => s.points)
   const lines = useEditorStore((s) => s.lines)
   const faces = useEditorStore((s) => s.faces)
@@ -140,7 +139,7 @@ export function EditorStage() {
       setSize({ w, h })
       if (!didInit.current && w > 0 && h > 0) {
         didInit.current = true
-        setVp(fitDomain(useEditorStore.getState().domain, w, h))
+        setVp(fitPoints(useEditorStore.getState().points, w, h))
       }
     })
     ro.observe(el)
@@ -151,7 +150,7 @@ export function EditorStage() {
     return useEditorStore.subscribe((state, prev) => {
       if (state.fitNonce === prev.fitNonce) return
       const { w, h } = sizeRef.current
-      if (w > 0 && h > 0) setVp(fitDomain(state.domain, w, h))
+      if (w > 0 && h > 0) setVp(fitPoints(state.points, w, h))
     })
   }, [])
 
@@ -305,7 +304,7 @@ export function EditorStage() {
     const onSeg = nearestLinePoint(lines, points, vp, px, py, HIT_PX)
     if (onSeg) return onSeg
     const w = screenToWorld(vp, px, py)
-    return snapWorld(w.x, w.z, domain.gridSpacing)
+    return snapWorld(w.x, w.z, gridSettings.spacing)
   }
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -410,7 +409,7 @@ export function EditorStage() {
     }
   }
 
-  const gridLines = computeGridLines(vp, size.w, size.h, domain.gridSpacing)
+  const gridLines = computeGridLines(vp, size.w, size.h, gridSettings.spacing)
   const colorOf = (mattype: number) =>
     materials.find((m) => m.mattype === mattype)?.color ?? materialColor(mattype)
 
@@ -428,9 +427,6 @@ export function EditorStage() {
     const key = flag as 0 | 1 | 2 | 16 | 32
     return lineSettings.styleByFlag[key] ?? { color: '#a855f7', dash: [] }
   }
-
-  const domTL = worldToScreen(vp, domain.xmin, domain.zmax)
-  const domBR = worldToScreen(vp, domain.xmax, domain.zmin)
 
   const startPt = pendingLineStart ? byId.get(pendingLineStart) : undefined
   const startScreen = startPt ? worldToScreen(vp, startPt.x, startPt.z) : null
@@ -480,15 +476,6 @@ export function EditorStage() {
                   strokeWidth={l.axis ? Math.max(1.2, gridSettings.lineWidth) : gridSettings.lineWidth}
                 />
               ))}
-              <Rect
-                x={domTL.sx}
-                y={domTL.sy}
-                width={domBR.sx - domTL.sx}
-                height={domBR.sy - domTL.sy}
-                stroke="#a855f7"
-                strokeWidth={1.5}
-                dash={[4, 4]}
-              />
             </Layer>
           )}
 

@@ -1,4 +1,12 @@
-import type { Domain, Point } from '../types'
+import type { Point } from '../types'
+
+/** Axis-aligned bounding box used to classify line-on-edge against a derived envelope. */
+export interface BoundingBox {
+  xmin: number
+  xmax: number
+  zmin: number
+  zmax: number
+}
 
 /** Single-bit boundary flags used by DES3D in 2D. */
 export const BDRY = {
@@ -47,16 +55,22 @@ export function boundaryDash(flag: number): number[] | undefined {
 }
 
 /**
- * Auto-assign a boundary flag from a line's position relative to the domain extent.
- * A line lying on a domain edge gets that edge's flag; otherwise 0 (internal).
+ * Auto-assign a boundary flag from a line's position relative to a bounding box
+ * (typically the convex envelope of every point in the document). A line lying
+ * on a box edge gets that edge's flag; otherwise 0 (internal).
  */
-export function autoBoundaryFlag(p0: Point, p1: Point, domain: Domain, eps?: number): number {
-  const span = Math.max(domain.xmax - domain.xmin, domain.zmax - domain.zmin)
+export function autoBoundaryFlag(
+  p0: Point,
+  p1: Point,
+  bbox: BoundingBox,
+  eps?: number,
+): number {
+  const span = Math.max(bbox.xmax - bbox.xmin, bbox.zmax - bbox.zmin)
   const ex = eps ?? (span > 0 ? span * 1e-6 : 1e-6)
   const near = (a: number, b: number) => Math.abs(a - b) <= ex
-  if (near(p0.x, domain.xmin) && near(p1.x, domain.xmin)) return BDRY.X0
-  if (near(p0.x, domain.xmax) && near(p1.x, domain.xmax)) return BDRY.X1
-  if (near(p0.z, domain.zmin) && near(p1.z, domain.zmin)) return BDRY.Z0
-  if (near(p0.z, domain.zmax) && near(p1.z, domain.zmax)) return BDRY.Z1
+  if (near(p0.x, bbox.xmin) && near(p1.x, bbox.xmin)) return BDRY.X0
+  if (near(p0.x, bbox.xmax) && near(p1.x, bbox.xmax)) return BDRY.X1
+  if (near(p0.z, bbox.zmin) && near(p1.z, bbox.zmin)) return BDRY.Z0
+  if (near(p0.z, bbox.zmax) && near(p1.z, bbox.zmax)) return BDRY.Z1
   return BDRY.NONE
 }
