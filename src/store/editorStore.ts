@@ -2,7 +2,14 @@ import { create } from 'zustand'
 import { temporal } from 'zundo'
 import type { Domain, Face, Material, Point, PolyDocument, Region, Segment } from '../types'
 import { uid } from '../lib/id'
-import { coordKey, pointInPolygon, pointOnSegment, type Vec2 } from '../lib/geometry'
+import {
+  coordKey,
+  interiorPoint,
+  pointInPolygon,
+  pointOnSegment,
+  projectToSegment,
+  type Vec2,
+} from '../lib/geometry'
 import { defaultDomain } from '../lib/defaults'
 import { materialColor } from '../constants/materials'
 import { autoBoundaryFlag } from '../poly/boundary'
@@ -78,8 +85,11 @@ export interface EditorState {
   movePoint: (id: string, x: number, z: number) => void
   updatePoint: (id: string, patch: Partial<Pick<Point, 'x' | 'z'>>) => void
   addSegment: (p0: string, p1: string, bdryFlag?: number) => string | null
-  /** Split any existing segment whose interior the point lies on (T-junction noding). */
-  splitSegmentsAt: (pointId: string) => void
+  /**
+   * Split every segment at any point lying on its interior (T-junction noding),
+   * so polygonize sees a conforming PSLG. Returns true if anything was split.
+   */
+  renode: () => boolean
   addLineByCoords: (
     x1: number,
     z1: number,
@@ -221,6 +231,22 @@ export const useEditorStore = create<EditorState>()(
     }
     const moveRegions = new Set(sel.regionIds)
 
+    // A region whose enclosing face moves in full should travel with it, so the
+    // seed keeps its material assignment instead of being orphaned.
+    const ptById = new Map(s.points.map((p) => [p.id, p]))
+    for (const f of s.faces) {
+      if (f.pointIds.length < 3 || !f.pointIds.every((pid) => movePts.has(pid))) continue
+      const verts = f.pointIds
+        .map((pid) => ptById.get(pid))
+        .filter((p): p is Point => p !== undefined)
+        .map((p) => ({ x: p.x, z: p.z }))
+      for (const r of s.regions) {
+        if (!moveRegions.has(r.id) && pointInPolygon({ x: r.x, z: r.z }, verts)) {
+          moveRegions.add(r.id)
+        }
+      }
+    }
+
     set((st) => ({
       points: st.points.map((p) =>
         movePts.has(p.id) ? { ...p, x: p.x + dx, z: p.z + dz } : p,
@@ -237,8 +263,8 @@ export const useEditorStore = create<EditorState>()(
     if (existing) return existing.id
     const id = uid('p')
     set((s) => ({ points: [...s.points, { id, x, z }] }))
-    // Node any edge this point lands on so faces split correctly.
-    get().splitSegmentsAt(id)
+    // An isolated point never changes faces; only recompute if it nodes an edge.
+    if (get().renode()) get().recomputeFaces()
     return id
   },
 
@@ -246,6 +272,7 @@ export const useEditorStore = create<EditorState>()(
     set((s) => ({
       points: s.points.map((p) => (p.id === id ? { ...p, x, z } : p)),
     }))
+    get().renode()
     get().recomputeFaces()
   },
 
@@ -253,6 +280,7 @@ export const useEditorStore = create<EditorState>()(
     set((s) => ({
       points: s.points.map((p) => (p.id === id ? { ...p, ...patch } : p)),
     }))
+    get().renode()
     get().recomputeFaces()
   },
 
@@ -261,35 +289,56 @@ export const useEditorStore = create<EditorState>()(
     if (segmentExists(get().segments, p0, p1)) return null
     const id = uid('s')
     set((s) => ({ segments: [...s.segments, { id, p0, p1, bdryFlag }] }))
+    // The new segment may pass through existing points; node it before meshing.
+    get().renode()
     get().recomputeFaces()
     return id
   },
 
-  splitSegmentsAt: (pointId) => {
-    const { points, segments } = get()
-    const p = points.find((pt) => pt.id === pointId)
-    if (!p) return
-    const byId = new Map(points.map((pt) => [pt.id, pt]))
-    const hits = segments.filter((s) => {
-      if (s.p0 === pointId || s.p1 === pointId) return false
+  renode: () => {
+    const points = get().points
+    const byId = new Map(points.map((p) => [p.id, p]))
+    const next: Segment[] = []
+    let changed = false
+    for (const s of get().segments) {
       const a = byId.get(s.p0)
       const b = byId.get(s.p1)
-      return a !== undefined && b !== undefined && pointOnSegment(p, a, b)
+      if (!a || !b) {
+        next.push(s)
+        continue
+      }
+      const interior = points
+        .filter((pt) => pt.id !== s.p0 && pt.id !== s.p1 && pointOnSegment(pt, a, b))
+        .map((pt) => ({ id: pt.id, t: projectToSegment(pt, a, b).t }))
+        .sort((m, n) => m.t - n.t)
+      if (interior.length === 0) {
+        next.push(s)
+        continue
+      }
+      changed = true
+      const chain = [s.p0, ...interior.map((i) => i.id), s.p1]
+      for (let k = 0; k + 1 < chain.length; k++) {
+        next.push({ id: uid('s'), p0: chain[k], p1: chain[k + 1], bdryFlag: s.bdryFlag })
+      }
+    }
+    if (!changed) return false
+    // Splitting can produce a piece coinciding with another segment; keep one.
+    const seen = new Set<string>()
+    const deduped = next.filter((s) => {
+      const key = s.p0 < s.p1 ? `${s.p0}|${s.p1}` : `${s.p1}|${s.p0}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
     })
-    if (hits.length === 0) return
-    const hitIds = new Set(hits.map((s) => s.id))
-    const added = hits.flatMap((s) => [
-      { id: uid('s'), p0: s.p0, p1: pointId, bdryFlag: s.bdryFlag },
-      { id: uid('s'), p0: pointId, p1: s.p1, bdryFlag: s.bdryFlag },
-    ])
-    set((s) => ({
-      segments: [...s.segments.filter((seg) => !hitIds.has(seg.id)), ...added],
+    const validIds = new Set(deduped.map((s) => s.id))
+    set((st) => ({
+      segments: deduped,
       selection: {
-        ...s.selection,
-        segmentIds: s.selection.segmentIds.filter((id) => !hitIds.has(id)),
+        ...st.selection,
+        segmentIds: st.selection.segmentIds.filter((id) => validIds.has(id)),
       },
     }))
-    get().recomputeFaces()
+    return true
   },
 
   addLineByCoords: (x1, z1, x2, z2, autoCreate) => {
@@ -314,6 +363,15 @@ export const useEditorStore = create<EditorState>()(
       }
     }
     const segmentId = get().addSegment(a, b)
+    if (segmentId === null) {
+      // Roll back auto-created points so a rejected line leaves no orphans.
+      if (created.length) get().removePoints(created)
+      return {
+        segmentId: null,
+        createdPointIds: [],
+        error: a === b ? 'Endpoints coincide; no line added.' : 'That segment already exists.',
+      }
+    }
     return { segmentId, createdPointIds: created }
   },
 
@@ -373,7 +431,9 @@ export const useEditorStore = create<EditorState>()(
       if (region) {
         get().updateRegion(region.id, patch)
       } else {
-        get().addRegion(face.centroid.x, face.centroid.z, patch.mattype ?? 0, patch.size ?? -1)
+        // Seed at a guaranteed-interior point (centroid can fall outside concave faces).
+        const seed = interiorPoint(verts)
+        get().addRegion(seed.x, seed.z, patch.mattype ?? 0, patch.size ?? -1)
       }
     }
   },
@@ -426,9 +486,13 @@ export const useEditorStore = create<EditorState>()(
         .filter((p): p is Point => p !== undefined)
         .map((p) => ({ x: p.x, z: p.z })),
     )
-    const orphanIds = regions
+    let orphanIds = regions
       .filter((r) => !faceVerts.some((verts) => pointInPolygon({ x: r.x, z: r.z }, verts)))
       .map((r) => r.id)
+    // DES3D requires nregions >= 1, so never remove the last remaining region.
+    if (regions.length > 0 && orphanIds.length === regions.length) {
+      orphanIds = orphanIds.slice(1)
+    }
     if (orphanIds.length > 0) get().removeRegions(orphanIds)
   },
 
@@ -506,6 +570,20 @@ export const useEditorStore = create<EditorState>()(
         a.regions === b.regions &&
         a.materials === b.materials &&
         a.domain === b.domain,
+      // A single user action calls set() several times (e.g. addLineByCoords ->
+      // addPoint + addPoint + addSegment). Record only the first change of each
+      // synchronous burst so one action becomes exactly one undo step.
+      handleSet: (record) => {
+        let batching = false
+        return (pastState) => {
+          if (batching) return
+          batching = true
+          record(pastState)
+          queueMicrotask(() => {
+            batching = false
+          })
+        }
+      },
     },
   ),
 )

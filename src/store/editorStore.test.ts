@@ -225,6 +225,77 @@ describe('editorStore', () => {
     expect(store().regions[0]).toMatchObject({ x: 150, z: -50 })
   })
 
+  test('addSegment nodes a new segment drawn through an existing interior point', () => {
+    const a = store().addPoint(0, 0)
+    const mid = store().addPoint(50, 0)
+    const b = store().addPoint(100, 0)
+    expect(store().segments.length).toBe(0)
+    expect(store().addSegment(a, b)).not.toBeNull()
+    // a-b passes through mid, so it must be split into a-mid and mid-b.
+    expect(store().segments.length).toBe(2)
+    const incidentToMid = store().segments.filter((s) => s.p0 === mid || s.p1 === mid)
+    expect(incidentToMid.length).toBe(2)
+  })
+
+  test('moving a point onto a segment interior re-nodes that segment', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().addSegment(a, b)
+    const c = store().addPoint(50, -50) // off the segment
+    expect(store().segments.length).toBe(1)
+    store().movePoint(c, 50, 0) // now on the a-b interior
+    expect(store().segments.length).toBe(2)
+  })
+
+  test('nudgeSelection carries a region seed enclosed by a nudged face', () => {
+    store().setDomain({ gridSpacing: 10, xmin: 0, xmax: 200, zmin: -200, zmax: 0 })
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    store().addSegment(a, b)
+    store().addSegment(b, c)
+    store().addSegment(c, d)
+    store().addSegment(d, a)
+    const faceId = store().faces[0].id
+    store().applyFaceMaterial([faceId], { mattype: 1 })
+    expect(store().regions.length).toBe(1)
+    const seed0 = { ...store().regions[0] }
+    store().selectSingle('face', faceId)
+    store().nudgeSelection(1, 0, false) // +x by one grid step (10)
+    expect(store().regions[0].x).toBeCloseTo(seed0.x + 10, 6)
+    expect(store().regions[0].z).toBeCloseTo(seed0.z, 6)
+    // The seed still sits inside the moved face (material assignment preserved).
+    expect(store().regions[0].id).toBe(seed0.id)
+  })
+
+  test('removeOrphanRegions never removes the last region (nregions>=1 floor)', () => {
+    store().addRegion(999, 999, 0) // outside any face (there are none)
+    expect(store().regions.length).toBe(1)
+    store().removeOrphanRegions()
+    expect(store().regions.length).toBe(1)
+  })
+
+  test('addLineByCoords rejects a duplicate segment without leaving orphan points', () => {
+    store().addLineByCoords(0, 0, 100, 0, true)
+    const pointCount = store().points.length
+    const res = store().addLineByCoords(0, 0, 100, 0, true)
+    expect(res.segmentId).toBeNull()
+    expect(res.error).toBe('That segment already exists.')
+    expect(store().points.length).toBe(pointCount) // no orphan auto-created point
+    expect(store().segments.length).toBe(1)
+  })
+
+  test('a single logical edit is one undo step (zundo handleSet batching)', async () => {
+    const temporal = useEditorStore.temporal
+    temporal.getState().clear()
+    await Promise.resolve() // flush the batching microtask
+    const before = temporal.getState().pastStates.length
+    // addLineByCoords calls set() three times (addPoint + addPoint + addSegment).
+    store().addLineByCoords(0, 0, 100, 0, true)
+    expect(temporal.getState().pastStates.length).toBe(before + 1)
+  })
+
   test('toDocument / loadDocument round-trips through the store', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)

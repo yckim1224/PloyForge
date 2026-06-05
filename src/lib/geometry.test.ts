@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest'
-import { pointOnSegment, projectToSegment } from './geometry'
+import {
+  interiorPoint,
+  pointInPolygon,
+  pointOnSegment,
+  polygonCentroid,
+  projectToSegment,
+  type Vec2,
+} from './geometry'
 
 describe('projectToSegment', () => {
   test('projects onto the segment with distance and parameter', () => {
@@ -31,5 +38,35 @@ describe('pointOnSegment', () => {
   })
   test('works on a slanted segment', () => {
     expect(pointOnSegment({ x: 50, z: -50 }, { x: 0, z: 0 }, { x: 100, z: -100 })).toBe(true)
+  })
+})
+
+describe('interiorPoint', () => {
+  test('returns the centroid for a convex polygon', () => {
+    const square: Vec2[] = [
+      { x: 0, z: 0 },
+      { x: 100, z: 0 },
+      { x: 100, z: -100 },
+      { x: 0, z: -100 },
+    ]
+    const p = interiorPoint(square)
+    expect(p.x).toBeCloseTo(50, 6)
+    expect(p.z).toBeCloseTo(-50, 6)
+  })
+
+  test('returns an inside point for a concave (U-shaped) polygon whose centroid is outside', () => {
+    // U opening toward the surface; the notch is the column x[10,20], z(0,-30).
+    const u: Vec2[] = [
+      { x: 0, z: 0 },
+      { x: 10, z: 0 },
+      { x: 10, z: -30 },
+      { x: 20, z: -30 },
+      { x: 20, z: 0 },
+      { x: 30, z: 0 },
+      { x: 30, z: -40 },
+      { x: 0, z: -40 },
+    ]
+    expect(pointInPolygon(polygonCentroid(u), u)).toBe(false)
+    expect(pointInPolygon(interiorPoint(u), u)).toBe(true)
   })
 })

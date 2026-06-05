@@ -45,6 +45,37 @@ export function polygonCentroid(pts: Vec2[]): Vec2 {
   return { x: cx / (6 * a), z: cz / (6 * a) }
 }
 
+/**
+ * A point guaranteed to lie inside the polygon. Uses the area centroid when it
+ * falls inside (the common convex case); otherwise picks the midpoint of the
+ * widest interior span on the scanline through the centroid, so concave faces
+ * still get a seed that is actually inside them.
+ */
+export function interiorPoint(verts: Vec2[]): Vec2 {
+  const c = polygonCentroid(verts)
+  if (pointInPolygon(c, verts)) return c
+  const z = c.z
+  const xs: number[] = []
+  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+    const zi = verts[i].z
+    const zj = verts[j].z
+    if (zi > z !== zj > z) {
+      xs.push(verts[i].x + ((z - zi) / (zj - zi)) * (verts[j].x - verts[i].x))
+    }
+  }
+  xs.sort((a, b) => a - b)
+  let best = c
+  let bestWidth = -1
+  for (let k = 0; k + 1 < xs.length; k += 2) {
+    const width = xs[k + 1] - xs[k]
+    if (width > bestWidth) {
+      bestWidth = width
+      best = { x: (xs[k] + xs[k + 1]) / 2, z }
+    }
+  }
+  return best
+}
+
 /** Ray-casting point-in-polygon test. */
 export function pointInPolygon(pt: Vec2, poly: Vec2[]): boolean {
   let inside = false
