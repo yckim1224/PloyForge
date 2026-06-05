@@ -3,9 +3,12 @@ import { Circle, Layer, Line, Rect, Stage } from 'react-konva'
 import type Konva from 'konva'
 import { redoEdit, undoEdit, useEditorStore } from '../store/editorStore'
 import { useSettingsStore } from '../store/settingsStore'
+import { useLayerStore } from '../store/layerStore'
 import { materialColor } from '../constants/materials'
 import { type Vec2 } from '../lib/geometry'
 import { Toolbar } from '../components/Toolbar'
+import { Tooltip } from '../components/Tooltip'
+import { LayerOverlay } from './LayerOverlay'
 import { Crosshair, HelpCircle } from 'lucide-react'
 import { computeGridLines } from './grid'
 import {
@@ -37,14 +40,15 @@ const HELP_HINT = [
 function StageActions({ onFit }: { onFit: () => void }) {
   return (
     <div className="absolute right-3 top-3 z-10 flex gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur">
-      <button
-        type="button"
-        title={HELP_HINT}
-        aria-label="Keyboard shortcuts"
-        className="flex size-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100"
-      >
-        <HelpCircle className="size-4" />
-      </button>
+      <Tooltip content={HELP_HINT} placement="bottom">
+        <button
+          type="button"
+          aria-label="Keyboard shortcuts"
+          className="flex size-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100"
+        >
+          <HelpCircle className="size-4" />
+        </button>
+      </Tooltip>
       <button
         type="button"
         title="Fit view"
@@ -106,6 +110,12 @@ export function EditorStage() {
   const pointSettings = useSettingsStore((s) => s.point)
   const lineSettings = useSettingsStore((s) => s.line)
   const materials = useSettingsStore((s) => s.materials)
+
+  const layerGrid = useLayerStore((s) => s.grid)
+  const layerPoints = useLayerStore((s) => s.points)
+  const layerLines = useLayerStore((s) => s.lines)
+  const layerFaces = useLayerStore((s) => s.faces)
+  const setLayer = useLayerStore((s) => s.setLayer)
 
   const addPoint = useEditorStore((s) => s.addPoint)
   const addLine = useEditorStore((s) => s.addLine)
@@ -236,6 +246,22 @@ export function EditorStage() {
   useEffect(() => {
     if (hudRef.current) hudRef.current.textContent = HUD_EMPTY
   }, [])
+
+  // Auto-show a hidden layer when items of that kind become selected
+  // (e.g. checked from the panel) so ghost selections never linger.
+  useEffect(() => {
+    if (selection.pointIds.length > 0 && !layerPoints) setLayer('points', true)
+    if (selection.lineIds.length > 0 && !layerLines) setLayer('lines', true)
+    if (selection.faceIds.length > 0 && !layerFaces) setLayer('faces', true)
+  }, [
+    selection.pointIds,
+    selection.lineIds,
+    selection.faceIds,
+    layerPoints,
+    layerLines,
+    layerFaces,
+    setLayer,
+  ])
 
   const byId = new Map(points.map((p) => [p.id, p]))
 
@@ -419,7 +445,10 @@ export function EditorStage() {
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-100">
-      <Toolbar />
+      <div className="absolute left-3 top-3 z-10 flex flex-col gap-2">
+        <Toolbar />
+        <LayerOverlay />
+      </div>
       <StageActions onFit={requestFit} />
       <div
         ref={hudRef}
@@ -441,7 +470,7 @@ export function EditorStage() {
           }}
           onClick={handleClick}
         >
-          {gridSettings.show && (
+          {gridSettings.show && layerGrid && (
             <Layer listening={false}>
               {gridLines.map((l, i) => (
                 <Line
@@ -464,6 +493,7 @@ export function EditorStage() {
           )}
 
           {/* Faces, filled by the Type from `faceTypes` (gray when unassigned). */}
+          {layerFaces && (
           <Layer>
             {faces.map((f) => {
               const verts = faceVerts(f.pointIds)
@@ -489,7 +519,9 @@ export function EditorStage() {
               )
             })}
           </Layer>
+          )}
 
+          {layerLines && (
           <Layer>
             {lines.map((seg) => {
               const p0 = byId.get(seg.p0)
@@ -512,6 +544,11 @@ export function EditorStage() {
                 />
               )
             })}
+          </Layer>
+          )}
+
+          {layerPoints && (
+          <Layer>
             {points.map((p) => {
               const s = worldToScreen(vp, p.x, p.z)
               const selected = selPoints.has(p.id)
@@ -531,6 +568,7 @@ export function EditorStage() {
               )
             })}
           </Layer>
+          )}
 
           <Layer listening={false}>
             {startScreen && hover && (

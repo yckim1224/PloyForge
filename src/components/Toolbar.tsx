@@ -21,7 +21,7 @@ export function Toolbar() {
   )
 
   return (
-    <div className="absolute left-3 top-3 z-10 flex flex-col gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur">
+    <div className="flex flex-col gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur">
       {TOOLS.map(({ id, label, Icon }) => {
         const active = tool === id
         return (

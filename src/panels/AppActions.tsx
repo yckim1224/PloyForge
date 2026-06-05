@@ -13,6 +13,7 @@ import { serializePoly } from '../poly/serialize'
 import { parsePoly } from '../poly/parse'
 import { validateDocument, type ValidationIssue } from '../poly/validate'
 import { ConfirmModal } from '../components/ConfirmModal'
+import { SettingsModal } from './SettingsModal'
 
 export function AppActions() {
   const toDocument = useEditorStore((s) => s.toDocument)
@@ -23,6 +24,7 @@ export function AppActions() {
   const [importError, setImportError] = useState<string | null>(null)
   const [exportWarning, setExportWarning] = useState<string | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const onImportClick = () => fileRef.current?.click()
 
@@ -77,10 +79,7 @@ export function AppActions() {
     URL.revokeObjectURL(url)
   }
 
-  const onSettings = () => {
-    // Stub: full Settings modal lands in Phase 3.
-    console.info('Settings UI lands in Phase 3')
-  }
+  const onSettings = () => setSettingsOpen(true)
 
   const onClear = () => setConfirmClear(true)
 
@@ -103,12 +102,7 @@ export function AppActions() {
           <Upload className="size-4" />
           Import .poly
         </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          onPress={onSettings}
-          aria-label="Settings (coming in Phase 3)"
-        >
+        <Button size="sm" variant="secondary" onPress={onSettings}>
           <Settings2 className="size-4" />
           Settings
         </Button>
@@ -163,6 +157,8 @@ export function AppActions() {
         onCancel={() => setConfirmClear(false)}
         onConfirm={doClear}
       />
+
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {issues && issues.length > 0 && (
         <ul className="flex flex-col gap-1 text-xs">

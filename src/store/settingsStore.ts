@@ -11,10 +11,6 @@ export interface LineStyle {
 export type BoundaryFlagKey = 0 | 1 | 2 | 16 | 32
 
 export interface GridSettings {
-  /** Largest grid extent rendered around the origin (m). */
-  maxExtent: number
-  /** Distance between grid lines (m). */
-  spacing: number
   lineColor: string
   lineWidth: number
   show: boolean
@@ -60,8 +56,6 @@ const STORAGE_KEY = 'poly-forge:settings:v1'
 
 export function defaultGrid(): GridSettings {
   return {
-    maxExtent: 1_000_000,
-    spacing: 25_000,
     lineColor: '#e5e7eb',
     lineWidth: 1,
     show: true,

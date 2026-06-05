@@ -46,7 +46,7 @@ describe('settingsStore', () => {
   test('resetDisplaySettings restores grid/point/line defaults and leaves materials alone', () => {
     useSettingsStore.getState().ensureMaterial(0)
     useSettingsStore.getState().setMaterial(0, { color: '#ff00ff', label: 'magenta' })
-    useSettingsStore.getState().setGrid({ show: false, spacing: 9999 })
+    useSettingsStore.getState().setGrid({ show: false, lineWidth: 9 })
     useSettingsStore.getState().setPoint({ radius: 42 })
     useSettingsStore.getState().setLine({ width: 99 })
 

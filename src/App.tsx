@@ -12,6 +12,12 @@ import {
   useSettingsStore,
   type AppSettings,
 } from './store/settingsStore'
+import {
+  loadLayerVisibility,
+  saveLayerVisibility,
+  useLayerStore,
+  type LayerVisibility,
+} from './store/layerStore'
 import { applyTheme, getTheme, type Theme } from './lib/theme'
 
 function IconButton({
@@ -86,6 +92,9 @@ function App() {
     const persistedSettings = loadSettings()
     if (persistedSettings) useSettingsStore.getState().hydrate(persistedSettings)
 
+    const persistedLayers = loadLayerVisibility()
+    if (persistedLayers) useLayerStore.getState().hydrate(persistedLayers)
+
     const doc = loadPersisted()
     if (doc) {
       useEditorStore.getState().loadDocument(doc)
@@ -125,9 +134,27 @@ function App() {
       }
     })
 
+    const unsubLayers = useLayerStore.subscribe((s, prev) => {
+      if (
+        s.grid !== prev.grid ||
+        s.points !== prev.points ||
+        s.lines !== prev.lines ||
+        s.faces !== prev.faces
+      ) {
+        const snapshot: LayerVisibility = {
+          grid: s.grid,
+          points: s.points,
+          lines: s.lines,
+          faces: s.faces,
+        }
+        saveLayerVisibility(snapshot)
+      }
+    })
+
     return () => {
       unsubDoc()
       unsubSettings()
+      unsubLayers()
     }
   }, [])
 
