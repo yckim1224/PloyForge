@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Circle, Layer, Line, Rect, Stage } from 'react-konva'
 import type Konva from 'konva'
+import type { Region } from '../types'
 import { redoEdit, undoEdit, useEditorStore } from '../store/editorStore'
 import { materialColor } from '../constants/materials'
 import { boundaryColor, boundaryDash } from '../poly/boundary'
@@ -219,6 +220,9 @@ export function EditorStage() {
     const stage = e.target.getStage()
     const p = stage?.getPointerPosition()
     if (!p) return
+    // Clear any stale suppress flag from a marquee that ended off-stage (mouseleave
+    // fires no follow-up click to clear it), so this gesture's click isn't swallowed.
+    justMarqueed.current = false
     if (spacePan || tool === 'pan' || e.evt.button === 1) {
       panning.current = { x: p.x, y: p.y }
       return
@@ -366,9 +370,29 @@ export function EditorStage() {
       .filter((p): p is NonNullable<typeof p> => Boolean(p))
       .map((p) => ({ x: p.x, z: p.z }))
 
-  const faceVertsList = faces.map((f) => faceVerts(f.pointIds))
-  const isOrphanRegion = (r: { x: number; z: number }) =>
-    !faceVertsList.some((verts) => pointInPolygon({ x: r.x, z: r.z }, verts))
+  // Region<->face containment is independent of the viewport, so derive it once
+  // per geometry change instead of on every pan/zoom render frame.
+  const { faceRegion, orphanRegionIds } = useMemo(() => {
+    const ptById = new Map(points.map((p) => [p.id, p]))
+    const vertsOf = (pointIds: string[]): Vec2[] =>
+      pointIds
+        .map((pid) => ptById.get(pid))
+        .filter((p): p is NonNullable<typeof p> => Boolean(p))
+        .map((p) => ({ x: p.x, z: p.z }))
+    const faceVertsList = faces.map((f) => vertsOf(f.pointIds))
+    const fr = new Map<string, Region>()
+    faces.forEach((f, i) => {
+      const r = regions.find((rg) => pointInPolygon({ x: rg.x, z: rg.z }, faceVertsList[i]))
+      if (r) fr.set(f.id, r)
+    })
+    const orphans = new Set<string>()
+    for (const r of regions) {
+      if (!faceVertsList.some((verts) => pointInPolygon({ x: r.x, z: r.z }, verts))) {
+        orphans.add(r.id)
+      }
+    }
+    return { faceRegion: fr, orphanRegionIds: orphans }
+  }, [faces, regions, points])
 
   const domTL = worldToScreen(vp, domain.xmin, domain.zmax)
   const domBR = worldToScreen(vp, domain.xmax, domain.zmin)
@@ -436,7 +460,7 @@ export function EditorStage() {
                 const s = worldToScreen(vp, v.x, v.z)
                 return [s.sx, s.sy]
               })
-              const region = regions.find((r) => pointInPolygon({ x: r.x, z: r.z }, verts))
+              const region = faceRegion.get(f.id)
               const selected = selFaces.has(f.id)
               const fill = region ? colorOf(region.mattype) : '#cbd5e1'
               return (
@@ -459,7 +483,7 @@ export function EditorStage() {
             {regions.map((r) => {
               const s = worldToScreen(vp, r.x, r.z)
               const selected = selRegions.has(r.id)
-              const orphan = isOrphanRegion(r)
+              const orphan = orphanRegionIds.has(r.id)
               return (
                 <Circle
                   key={r.id}
