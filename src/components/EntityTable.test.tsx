@@ -48,20 +48,25 @@ describe('EntityTable', () => {
     expect(screen.getByText('No items')).toBeTruthy()
   })
 
-  test('row checkbox toggle calls onToggleRow with additive=false on plain click', () => {
+  test('row checkbox toggle is always additive (standard multi-select)', () => {
     const onToggleRow = vi.fn()
     render(
       <EntityTable
         columns={COLUMNS}
         rows={ROWS}
-        selectedIds={new Set()}
+        selectedIds={new Set(['a'])}
         onToggleRow={onToggleRow}
         onToggleAll={() => {}}
       />,
     )
-    const cb = screen.getByLabelText('Select row 1')
-    fireEvent.click(cb)
-    expect(onToggleRow).toHaveBeenCalledWith('b', false)
+    // Plain click on an unchecked checkbox should add the row without
+    // dropping the row already in the selection ('a').
+    fireEvent.click(screen.getByLabelText('Select row 1'))
+    expect(onToggleRow).toHaveBeenLastCalledWith('b', true)
+    // Plain click on a checked checkbox should remove the row (same path,
+    // since toggleSelect handles add-or-remove for the same id).
+    fireEvent.click(screen.getByLabelText('Select row 0'))
+    expect(onToggleRow).toHaveBeenLastCalledWith('a', true)
   })
 
   test('row body click calls onToggleRow with additive=true when shift held', () => {

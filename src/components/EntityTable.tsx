@@ -187,13 +187,12 @@ export function EntityTable<T extends { id: string }>({
                   type="checkbox"
                   aria-label={`Select row ${idx}`}
                   checked={selected}
-                  onChange={(e) => {
-                    const ne = e.nativeEvent
-                    const additive =
-                      ne instanceof MouseEvent &&
-                      (ne.shiftKey || ne.ctrlKey || ne.metaKey)
-                    onToggleRow(row.id, additive)
-                  }}
+                  // The row checkbox follows standard multi-select semantics:
+                  // a plain click toggles this id into / out of the selection
+                  // without disturbing other checked rows -- no modifier key
+                  // required. The row-body click below keeps the canvas-style
+                  // single/additive model (Shift/Ctrl to extend).
+                  onChange={() => onToggleRow(row.id, true)}
                   className="accent-violet-600"
                 />
               </td>
