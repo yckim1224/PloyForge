@@ -1,7 +1,6 @@
 import { useMemo, type ChangeEvent, type ReactNode } from 'react'
 import { Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Modal } from '../components/Modal'
-import { useEditorStore } from '../store/editorStore'
 import { useSettingsStore, type BoundaryFlagKey } from '../store/settingsStore'
 import { materialColor } from '../constants/materials'
 import type { Material } from '../types'
@@ -113,9 +112,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const setMaterial = useSettingsStore((s) => s.setMaterial)
   const resetDisplaySettings = useSettingsStore((s) => s.resetDisplaySettings)
 
-  const domain = useEditorStore((s) => s.domain)
-  const setDomain = useEditorStore((s) => s.setDomain)
-
   const sortedMaterials = useMemo(
     () => [...materials].sort((a, b) => a.mattype - b.mattype),
     [materials],
@@ -170,68 +166,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               checked={grid.show}
               onChange={(e) => setGrid({ show: e.target.checked })}
               className="size-4"
-            />
-          </Field>
-        </Group>
-
-        <Group
-          title="Domain & Meshing"
-          hint="These values live in the .poly document, not in display settings. Edits are undoable; 'Restore display settings' below does not affect them."
-        >
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="xmin">
-              <NumberCell
-                value={domain.xmin}
-                // Reject inverted bounds; the cell snaps back via key + defaultValue.
-                onCommit={(v) => { if (v < domain.xmax) setDomain({ xmin: v }) }}
-                width="w-24"
-              />
-            </Field>
-            <Field label="xmax">
-              <NumberCell
-                value={domain.xmax}
-                onCommit={(v) => { if (v > domain.xmin) setDomain({ xmax: v }) }}
-                width="w-24"
-              />
-            </Field>
-            <Field label="zmin">
-              <NumberCell
-                value={domain.zmin}
-                onCommit={(v) => { if (v < domain.zmax) setDomain({ zmin: v }) }}
-                width="w-24"
-              />
-            </Field>
-            <Field label="zmax">
-              <NumberCell
-                value={domain.zmax}
-                onCommit={(v) => { if (v > domain.zmin) setDomain({ zmax: v }) }}
-                width="w-24"
-              />
-            </Field>
-          </div>
-          <Field label="Grid spacing (m)">
-            <NumberCell
-              value={domain.gridSpacing}
-              onCommit={(v) => { if (v > 0) setDomain({ gridSpacing: v }) }}
-            />
-          </Field>
-          <Field label="Meshing option">
-            <select
-              value={domain.meshingOption}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                if (v === 90 || v === 91) setDomain({ meshingOption: v })
-              }}
-              className={`${inputClass} w-44`}
-            >
-              <option value={90}>90 (absolute sizes)</option>
-              <option value={91}>91 (size as ratio)</option>
-            </select>
-          </Field>
-          <Field label="Resolution">
-            <NumberCell
-              value={domain.resolution}
-              onCommit={(v) => setDomain({ resolution: v })}
             />
           </Field>
         </Group>

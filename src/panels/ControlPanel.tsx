@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react'
 import { AppActions } from './AppActions'
+import { DomainSection } from './DomainSection'
 import { PointsSection } from './PointsSection'
 import { LinesSection } from './LinesSection'
 import { FacesSection } from './FacesSection'
@@ -22,6 +23,7 @@ export function ControlPanel() {
         <AppActions />
       </Section>
 
+      <DomainSection />
       <PointsSection />
       <LinesSection />
       <FacesSection />
