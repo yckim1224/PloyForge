@@ -6,7 +6,6 @@ import { ToastViewport } from './components/ToastViewport'
 import { EditorStage } from './canvas/EditorStage'
 import { ControlPanel } from './panels/ControlPanel'
 import { redoEdit, undoEdit, useEditorStore } from './store/editorStore'
-import { loadPersisted, savePersisted } from './lib/persistence'
 import {
   loadSettings,
   saveSettings,
@@ -86,9 +85,30 @@ function AppBar() {
 }
 
 function App() {
-  // Apply the saved theme and hydrate persisted geometry/settings on first mount.
+  // Apply the saved theme and hydrate persisted display preferences on first
+  // mount. The DOCUMENT itself is intentionally NOT persisted -- a refresh
+  // starts from an empty canvas; users are expected to Export to .poly to
+  // keep work. Display settings (grid, palette, layout, layers, theme) still
+  // persist so the editor feels stable across sessions.
   useEffect(() => {
     applyTheme(getTheme())
+
+    // One-time sweep of pre-existing auto-saved documents (v1..v3 era). Safe
+    // to call repeatedly -- removeItem on a missing key is a no-op.
+    try {
+      for (const key of [
+        'poly-forge:doc:v3',
+        'poly-forge:doc:v2',
+        'poly-forge:doc:v1',
+        'poly-forge:doc:v2.backup',
+        'poly-forge:doc:v1.backup',
+        'poly-forge:doc:v1.orphans',
+      ]) {
+        localStorage.removeItem(key)
+      }
+    } catch {
+      /* storage unavailable (private mode); skip */
+    }
 
     const persistedSettings = loadSettings()
     if (persistedSettings) useSettingsStore.getState().hydrate(persistedSettings)
@@ -96,10 +116,6 @@ function App() {
     const persistedLayers = loadLayerVisibility()
     if (persistedLayers) useLayerStore.getState().hydrate(persistedLayers)
 
-    // Register the settings subscriber BEFORE loadPersisted so the
-    // migration-driven setGrid (v2->v3 grid spacing lift) is captured and
-    // saved back to localStorage; otherwise the migrated spacing would
-    // silently vanish on the next reload.
     const unsubSettings = useSettingsStore.subscribe((s, prev) => {
       if (
         s.grid !== prev.grid ||
@@ -117,25 +133,17 @@ function App() {
       }
     })
 
-    const doc = loadPersisted({ settingsHydrated: persistedSettings !== null })
-    if (doc) {
-      useEditorStore.getState().loadDocument(doc)
-      useEditorStore.temporal.getState().clear()
+    // Browser-level confirm when leaving with unsaved geometry. Modern
+    // browsers ignore the returned string and show their own copy ("Changes
+    // you made may not be saved"); preventDefault + returnValue is the
+    // canonical way to opt in.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      const s = useEditorStore.getState()
+      if (s.points.length === 0 && s.lines.length === 0) return
+      e.preventDefault()
+      e.returnValue = ''
     }
-
-    const unsubDoc = useEditorStore.subscribe((s, prev) => {
-      if (
-        s.points !== prev.points ||
-        s.lines !== prev.lines ||
-        s.faceTypes !== prev.faceTypes
-      ) {
-        savePersisted({
-          points: s.points,
-          lines: s.lines,
-          faceTypes: s.faceTypes,
-        })
-      }
-    })
+    window.addEventListener('beforeunload', onBeforeUnload)
 
     const unsubLayers = useLayerStore.subscribe((s, prev) => {
       if (
@@ -155,7 +163,7 @@ function App() {
     })
 
     return () => {
-      unsubDoc()
+      window.removeEventListener('beforeunload', onBeforeUnload)
       unsubSettings()
       unsubLayers()
     }
