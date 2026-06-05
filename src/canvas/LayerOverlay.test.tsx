@@ -33,12 +33,12 @@ describe('LayerOverlay', () => {
     expect(grid.getAttribute('aria-pressed')).toBe('true')
   })
 
-  test('None hides everything and All restores it', () => {
+  test('Hide all hides everything and Show all restores it', () => {
     render(<LayerOverlay />)
-    fireEvent.click(screen.getByText('None'))
+    fireEvent.click(screen.getByLabelText('Hide all layers'))
     const s = useLayerStore.getState()
     expect(s.grid && s.points && s.lines && s.faces).toBe(false)
-    fireEvent.click(screen.getByText('All'))
+    fireEvent.click(screen.getByLabelText('Show all layers'))
     const s2 = useLayerStore.getState()
     expect(s2.grid && s2.points && s2.lines && s2.faces).toBe(true)
   })

@@ -1,4 +1,4 @@
-import { Circle, Grid3x3, Hexagon, Spline } from 'lucide-react'
+import { Circle, Eye, EyeOff, Grid3x3, Hexagon, Spline } from 'lucide-react'
 import { useLayerStore, type LayerKey } from '../store/layerStore'
 
 const LAYERS: { id: LayerKey; label: string; Icon: typeof Grid3x3 }[] = [
@@ -24,22 +24,24 @@ export function LayerOverlay() {
       aria-label="Layer visibility"
       className="flex flex-col gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur"
     >
-      <div className="flex gap-1">
-        <button
-          type="button"
-          onClick={() => setAll(true)}
-          className="flex-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-neutral-600 transition-colors hover:bg-neutral-100"
-        >
-          All
-        </button>
-        <button
-          type="button"
-          onClick={() => setAll(false)}
-          className="flex-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-neutral-600 transition-colors hover:bg-neutral-100"
-        >
-          None
-        </button>
-      </div>
+      <button
+        type="button"
+        title="Show all layers"
+        aria-label="Show all layers"
+        onClick={() => setAll(true)}
+        className="flex size-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100"
+      >
+        <Eye className="size-4" />
+      </button>
+      <button
+        type="button"
+        title="Hide all layers"
+        aria-label="Hide all layers"
+        onClick={() => setAll(false)}
+        className="flex size-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100"
+      >
+        <EyeOff className="size-4" />
+      </button>
       <div className="my-0.5 h-px bg-neutral-200" />
       {LAYERS.map(({ id, label, Icon }) => {
         const on = visible[id]

@@ -445,7 +445,7 @@ export function EditorStage() {
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-100">
-      <div className="absolute left-3 top-3 z-10 flex flex-col gap-2">
+      <div className="absolute left-3 top-3 z-10 flex flex-col items-start gap-2">
         <Toolbar />
         <LayerOverlay />
       </div>
