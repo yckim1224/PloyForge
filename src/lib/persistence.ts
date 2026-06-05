@@ -15,7 +15,19 @@ export function loadPersisted(): PolyDocument | null {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
     const doc = JSON.parse(raw) as PolyDocument
-    if (!doc || !Array.isArray(doc.points) || !Array.isArray(doc.segments)) return null
+    // Require the full document shape; a partial value would assign undefined into
+    // store fields the UI maps over and crash on mount.
+    if (
+      !doc ||
+      !Array.isArray(doc.points) ||
+      !Array.isArray(doc.segments) ||
+      !Array.isArray(doc.regions) ||
+      !Array.isArray(doc.materials) ||
+      typeof doc.domain !== 'object' ||
+      doc.domain === null
+    ) {
+      return null
+    }
     return doc
   } catch {
     return null

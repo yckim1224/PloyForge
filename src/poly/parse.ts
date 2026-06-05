@@ -56,6 +56,10 @@ export function parsePoly(text: string): ParseResult {
     const orig = parseInt(t[0], 10)
     const x = parseFloat(t[1])
     const z = parseFloat(t[2]) // 2D: second coordinate is z (depth)
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      warnings.push(`Node ${t[0] ?? k} has non-numeric coordinates; skipped.`)
+      continue
+    }
     const id = uid('p')
     idByOrig.set(orig, id)
     points.push({ id, x, z })
@@ -110,6 +114,10 @@ export function parsePoly(text: string): ParseResult {
         // line: k xk zk mattype size
         const x = parseFloat(t[1])
         const z = parseFloat(t[2])
+        if (!Number.isFinite(x) || !Number.isFinite(z)) {
+          warnings.push(`Region ${t[0] ?? k} has non-numeric coordinates; skipped.`)
+          continue
+        }
         const mattype = parseInt(t[3], 10)
         const size = parseFloat(t[4])
         regions.push({

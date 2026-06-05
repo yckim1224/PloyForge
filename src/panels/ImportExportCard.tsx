@@ -21,6 +21,7 @@ export function ImportExportCard() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null)
   const [warnings, setWarnings] = useState<string[]>([])
+  const [importError, setImportError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const onExport = () => {
@@ -47,12 +48,20 @@ export function ImportExportCard() {
   const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const text = await file.text()
-    const result = parsePoly(text)
-    loadDocument(result.doc)
-    setWarnings(result.warnings)
-    setIssues(null)
-    e.target.value = ''
+    try {
+      const text = await file.text()
+      const result = parsePoly(text)
+      loadDocument(result.doc)
+      setWarnings(result.warnings)
+      setImportError(null)
+      setIssues(null)
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Could not parse the .poly file.')
+      setWarnings([])
+    } finally {
+      // Always reset so re-selecting the same file fires another change event.
+      e.target.value = ''
+    }
   }
 
   const onValidate = () => setIssues(validateDocument(toDocument()))
@@ -86,6 +95,13 @@ export function ImportExportCard() {
         onChange={onImportFile}
         className="hidden"
       />
+
+      {importError && (
+        <p className="flex items-start gap-1.5 rounded-md bg-red-50 p-2 text-xs text-red-700">
+          <CircleX className="mt-0.5 size-3.5 shrink-0" />
+          Import failed: {importError}
+        </p>
+      )}
 
       {nRegions === 0 && (
         <p className="flex items-start gap-1.5 rounded-md bg-amber-50 p-2 text-xs text-amber-700">

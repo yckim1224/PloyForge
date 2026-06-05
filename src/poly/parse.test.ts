@@ -110,4 +110,13 @@ describe('parsePoly — tolerance', () => {
     expect(doc.regions.length).toBe(0)
     expect(warnings).toEqual([])
   })
+
+  test('skips nodes with non-numeric coordinates and warns instead of storing NaN', () => {
+    const text = ['2 2 0 0', '0 abc def', '1 100 -50', '0 1', '0'].join('\n')
+    const { doc, warnings } = parsePoly(text)
+    expect(doc.points.length).toBe(1)
+    expect(doc.points[0]).toMatchObject({ x: 100, z: -50 })
+    expect(doc.points.every((p) => Number.isFinite(p.x) && Number.isFinite(p.z))).toBe(true)
+    expect(warnings.some((w) => /non-numeric/.test(w))).toBe(true)
+  })
 })
