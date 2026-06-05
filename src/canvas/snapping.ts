@@ -7,6 +7,29 @@ export function snapWorld(x: number, z: number, spacing: number) {
   return { x: snap(x, spacing, 0), z: snap(z, spacing, 0) }
 }
 
+/**
+ * Snap to the nearest grid intersection only when the cursor sits within
+ * `thresholdPx` screen pixels of one. Returns null when the cursor is closer
+ * to mid-cell, so callers can defer to line-interior snap before falling back
+ * to unconditional grid snap.
+ */
+export function nearestGridIntersection(
+  vp: Viewport,
+  sx: number,
+  sy: number,
+  spacing: number,
+  thresholdPx: number,
+): { x: number; z: number } | null {
+  if (spacing <= 0) return null
+  const w = screenToWorld(vp, sx, sy)
+  const gx = snap(w.x, spacing, 0)
+  const gz = snap(w.z, spacing, 0)
+  const s = worldToScreen(vp, gx, gz)
+  const d = Math.hypot(s.sx - sx, s.sy - sy)
+  if (d > thresholdPx) return null
+  return { x: gx, z: gz }
+}
+
 /** Nearest existing point within `thresholdPx` screen pixels of (sx, sy), or null. */
 export function nearestPoint(
   points: Point[],

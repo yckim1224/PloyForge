@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest'
-import { nearestPoint, nearestLinePoint, snapWorld } from './snapping'
+import {
+  nearestGridIntersection,
+  nearestLinePoint,
+  nearestPoint,
+  snapWorld,
+} from './snapping'
 import type { Point, Line } from '../types'
 
 describe('snapWorld', () => {
@@ -45,5 +50,28 @@ describe('nearestLinePoint', () => {
 
   test('returns null when no edge is within the threshold', () => {
     expect(nearestLinePoint(segments, segPoints, vp, 100, 60, 10)).toBeNull()
+  })
+})
+
+describe('nearestGridIntersection', () => {
+  // 1 px per world meter; world (0,0) is at screen (0,0).
+  const vp = { scale: 1, originX: 0, originY: 0 }
+
+  test('snaps to the nearest grid intersection within the pixel threshold', () => {
+    // Cursor at screen (8, -3) -> world (8, 3). Nearest intersection at (0, 0).
+    const hit = nearestGridIntersection(vp, 8, -3, 100, 10)
+    expect(hit).not.toBeNull()
+    expect(hit!.x).toBe(0)
+    expect(hit!.z).toBe(0)
+  })
+
+  test('returns null when cursor sits mid-cell, beyond the threshold', () => {
+    // Halfway between two intersections; no intersection within HIT_PX.
+    expect(nearestGridIntersection(vp, 40, -40, 100, 10)).toBeNull()
+  })
+
+  test('returns null when spacing is non-positive', () => {
+    expect(nearestGridIntersection(vp, 0, 0, 0, 10)).toBeNull()
+    expect(nearestGridIntersection(vp, 0, 0, -1, 10)).toBeNull()
   })
 })

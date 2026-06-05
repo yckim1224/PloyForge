@@ -20,7 +20,7 @@ import {
   zoomAt,
   type Viewport,
 } from './viewport'
-import { nearestPoint, nearestLinePoint, snapWorld } from './snapping'
+import { nearestGridIntersection, nearestLinePoint, nearestPoint, snapWorld } from './snapping'
 import {
   facesInRect,
   linesInRect,
@@ -295,13 +295,26 @@ export function EditorStage() {
     }
   }
 
-  // Snap priority for placing a point: existing vertex -> point on an edge -> grid.
+  // Snap priority for placing a point:
+  //   1. existing vertex (always wins)
+  //   2. grid intersection within HIT_PX (beats line snap so a user trying to
+  //      drop a node at a grid+line crossing actually lands on the grid point)
+  //   3. point on an edge
+  //   4. free grid snap (always rounds to nearest intersection)
+  // Holding Alt bypasses every snap so the user can place at the exact cursor.
   const resolveTarget = (
     px: number,
     py: number,
+    altKey: boolean,
   ): { x: number; z: number; existingId?: string } => {
+    if (altKey) {
+      const w = screenToWorld(vp, px, py)
+      return { x: w.x, z: w.z }
+    }
     const existing = nearestPoint(points, vp, px, py, HIT_PX)
     if (existing) return { x: existing.x, z: existing.z, existingId: existing.id }
+    const onGrid = nearestGridIntersection(vp, px, py, gridSettings.spacing, HIT_PX)
+    if (onGrid) return onGrid
     const onSeg = nearestLinePoint(lines, points, vp, px, py, HIT_PX)
     if (onSeg) return onSeg
     const w = screenToWorld(vp, px, py)
@@ -331,7 +344,7 @@ export function EditorStage() {
       return
     }
     if (tool === 'point' || tool === 'line') {
-      const tgt = resolveTarget(p.x, p.y)
+      const tgt = resolveTarget(p.x, p.y, e.evt.altKey)
       const s = worldToScreen(vp, tgt.x, tgt.z)
       setHover({ sx: s.sx, sy: s.sy, x: tgt.x, z: tgt.z, existingId: tgt.existingId })
     } else if (hover) {
@@ -360,8 +373,9 @@ export function EditorStage() {
   const resolveEndpointId = (
     px: number,
     py: number,
+    altKey: boolean,
   ): { id: string; created: boolean } => {
-    const tgt = resolveTarget(px, py)
+    const tgt = resolveTarget(px, py, altKey)
     if (tgt.existingId) return { id: tgt.existingId, created: false }
     return { id: addPoint(tgt.x, tgt.z), created: true }
   }
@@ -399,12 +413,12 @@ export function EditorStage() {
       return
     }
     if (tool === 'point') {
-      const tgt = resolveTarget(p.x, p.y)
+      const tgt = resolveTarget(p.x, p.y, e.evt.altKey)
       selectSingle('point', tgt.existingId ?? addPoint(tgt.x, tgt.z))
       return
     }
     if (tool === 'line') {
-      const { id: endId, created } = resolveEndpointId(p.x, p.y)
+      const { id: endId, created } = resolveEndpointId(p.x, p.y, e.evt.altKey)
       if (!pendingLineStart) {
         setPendingLineStart(endId)
       } else if (endId !== pendingLineStart) {
