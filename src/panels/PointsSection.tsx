@@ -126,6 +126,12 @@ export function PointsSection() {
           destructive: true,
           onSelect: () => useEditorStore.getState().removeIsolatedPoints(),
         },
+        {
+          key: 'remove-all',
+          label: 'Remove all points',
+          destructive: true,
+          onSelect: () => useEditorStore.getState().removeAllPoints(),
+        },
       ]}
     />
   )

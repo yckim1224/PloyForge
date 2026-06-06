@@ -198,6 +198,18 @@ export function LinesSection() {
               label: 'Auto-assign boundary flags (all)',
               onSelect: () => useEditorStore.getState().autoAssignBoundaryFlags(),
             },
+            {
+              key: 'remove-non-face',
+              label: 'Remove non-face lines',
+              destructive: true,
+              onSelect: () => useEditorStore.getState().removeNonFaceLines(),
+            },
+            {
+              key: 'remove-all',
+              label: 'Remove all lines',
+              destructive: true,
+              onSelect: () => useEditorStore.getState().removeAllLines(),
+            },
           ]}
         />
       }

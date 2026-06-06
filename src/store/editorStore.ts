@@ -144,6 +144,12 @@ export interface EditorState {
   sortPointsBy: (key: 'x' | 'z', direction?: 'asc' | 'desc') => void
   /** Drop every point that no line references. */
   removeIsolatedPoints: () => void
+  /** Remove every point (and cascade-remove every line that referenced one). */
+  removeAllPoints: () => void
+  /** Remove every line; points and face-type assignments stay. */
+  removeAllLines: () => void
+  /** Drop every line that is not part of any detected face's boundary. */
+  removeNonFaceLines: () => void
 
   // Face Types (face-keyed material/size map)
   setFaceType: (faceId: string, mattype: number, size?: number) => void
@@ -588,6 +594,24 @@ export const useEditorStore = create<EditorState>()(
     }
     const orphans = points.filter((p) => !used.has(p.id)).map((p) => p.id)
     if (orphans.length > 0) get().removePoints(orphans)
+  },
+
+  removeAllPoints: () => {
+    const ids = get().points.map((p) => p.id)
+    if (ids.length > 0) get().removePoints(ids)
+  },
+
+  removeAllLines: () => {
+    const ids = get().lines.map((l) => l.id)
+    if (ids.length > 0) get().removeLines(ids)
+  },
+
+  removeNonFaceLines: () => {
+    const { lines, faces } = get()
+    const inSomeFace = new Set<string>()
+    for (const f of faces) for (const lid of f.lineIds) inSomeFace.add(lid)
+    const orphans = lines.filter((l) => !inSomeFace.has(l.id)).map((l) => l.id)
+    if (orphans.length > 0) get().removeLines(orphans)
   },
 
   setFaceType: (faceId, mattype, size = -1) => {
