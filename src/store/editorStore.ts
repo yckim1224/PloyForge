@@ -6,6 +6,8 @@ import {
   coordKey,
   pointOnSegment,
   projectToSegment,
+  segmentIntersection,
+  type Vec2,
 } from '../lib/geometry'
 import { autoBoundaryFlag, type BoundingBox } from '../poly/boundary'
 import { detectFaces } from '../poly/faces'
@@ -342,6 +344,57 @@ export const useEditorStore = create<EditorState>()(
   },
 
   renode: () => {
+    // PSLG conformity has two pieces:
+    //   (A) every proper segment-segment crossing must materialize as a point
+    //       so face detection can see four sub-regions instead of one.
+    //   (B) any point on a segment's interior must split that segment.
+    // Phase A inserts the missing intersection points; Phase B then runs the
+    // existing T-junction split. Splitting along an already-resolved crossing
+    // does not introduce new crossings, so a single pass over both phases is
+    // sufficient.
+
+    // ----- Phase A: insert points at proper crossings --------------------
+    {
+      const pts = get().points
+      const lines = get().lines
+      const byIdA = new Map(pts.map((p) => [p.id, p]))
+      const candidates: Vec2[] = []
+      for (let i = 0; i < lines.length; i++) {
+        const si = lines[i]
+        const ai = byIdA.get(si.p0)
+        const bi = byIdA.get(si.p1)
+        if (!ai || !bi) continue
+        for (let j = i + 1; j < lines.length; j++) {
+          const sj = lines[j]
+          // Shared endpoints don't count as crossings.
+          if (si.p0 === sj.p0 || si.p0 === sj.p1 || si.p1 === sj.p0 || si.p1 === sj.p1)
+            continue
+          const aj = byIdA.get(sj.p0)
+          const bj = byIdA.get(sj.p1)
+          if (!aj || !bj) continue
+          const hit = segmentIntersection(ai, bi, aj, bj)
+          if (hit) candidates.push(hit)
+        }
+      }
+      if (candidates.length > 0) {
+        // Dedupe against existing points and against other candidates in the
+        // batch via the same coordKey tolerance addPoint uses, so multiple
+        // lines meeting at one spot collapse to a single new point.
+        const seenKeys = new Set(pts.map((p) => coordKey(p.x, p.z)))
+        const additions: Point[] = []
+        for (const c of candidates) {
+          const k = coordKey(c.x, c.z)
+          if (seenKeys.has(k)) continue
+          seenKeys.add(k)
+          additions.push({ id: uid('p'), x: c.x, z: c.z })
+        }
+        if (additions.length > 0) {
+          set((s) => ({ points: [...s.points, ...additions] }))
+        }
+      }
+    }
+
+    // ----- Phase B: T-junction noding ------------------------------------
     const points = get().points
     const byId = new Map(points.map((p) => [p.id, p]))
     const next: Line[] = []

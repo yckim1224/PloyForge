@@ -397,15 +397,17 @@ describe('editorStore', () => {
   })
 
   test('insertLine(null, ...) appends, insertLine(k, ...) splices', () => {
+    // Non-crossing rectangle so the crossing-noding pass stays out of the
+    // way -- the assertion is purely about splice ordering, not noding.
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)
-    const c = store().addPoint(100, -100)
-    const d = store().addPoint(0, -100)
-    const s0 = store().addLine(a, b)!
-    const s1 = store().addLine(b, c)!
-    const sNew = store().insertLine(null, a, c)!
+    const c = store().addPoint(0, -100)
+    const d = store().addPoint(100, -100)
+    const s0 = store().addLine(a, b)! // top
+    const s1 = store().addLine(c, d)! // bottom
+    const sNew = store().insertLine(null, a, c)! // left, appended
     expect(store().lines.map((l) => l.id)).toEqual([s0, s1, sNew])
-    const sSpliced = store().insertLine(1, b, d)!
+    const sSpliced = store().insertLine(1, b, d)! // right, spliced at 1
     expect(store().lines.map((l) => l.id)).toEqual([s0, sSpliced, s1, sNew])
   })
 
@@ -521,5 +523,46 @@ describe('editorStore', () => {
     store().addLine(a, b)
     store().removeIsolatedPoints()
     expect(store().points.map((p) => p.id)).toEqual([a, b])
+  })
+
+  test('renode auto-creates intersection points so crossing lines split into 4 faces', () => {
+    // Square outline plus two internal lines that cross at the center
+    // without a pre-existing point there.
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    store().addLine(a, b)
+    store().addLine(b, c)
+    store().addLine(c, d)
+    store().addLine(d, a)
+    // Mid-edge points (T-junction noding splits the outline).
+    const e = store().addPoint(50, 0)
+    const f = store().addPoint(50, -100)
+    const g = store().addPoint(0, -50)
+    const h = store().addPoint(100, -50)
+    // Internal verticals/horizontals that cross at (50, -50) -- no point yet.
+    store().addLine(e, f)
+    store().addLine(g, h)
+
+    // Phase A added a single point at the crossing; phase B split both
+    // internal lines into two pieces each.
+    const center = store().points.find((p) => p.x === 50 && p.z === -50)
+    expect(center).toBeDefined()
+    expect(store().points.length).toBe(9)
+    expect(store().faces.length).toBe(4)
+
+    // sanity: every parent line was retired and each crossing branch exists.
+    const has = (p0: string, p1: string) =>
+      store().lines.some(
+        (l) => (l.p0 === p0 && l.p1 === p1) || (l.p0 === p1 && l.p1 === p0),
+      )
+    const ci = center!.id
+    expect(has(e, ci)).toBe(true)
+    expect(has(ci, f)).toBe(true)
+    expect(has(g, ci)).toBe(true)
+    expect(has(ci, h)).toBe(true)
+    expect(has(e, f)).toBe(false)
+    expect(has(g, h)).toBe(false)
   })
 })

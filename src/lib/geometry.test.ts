@@ -5,6 +5,7 @@ import {
   pointOnSegment,
   polygonCentroid,
   projectToSegment,
+  segmentIntersection,
   type Vec2,
 } from './geometry'
 
@@ -68,5 +69,65 @@ describe('interiorPoint', () => {
     ]
     expect(pointInPolygon(polygonCentroid(u), u)).toBe(false)
     expect(pointInPolygon(interiorPoint(u), u)).toBe(true)
+  })
+})
+
+describe('segmentIntersection', () => {
+  test('returns the crossing point of two segments meeting in their interiors', () => {
+    const hit = segmentIntersection(
+      { x: 0, z: 0 },
+      { x: 100, z: -100 },
+      { x: 0, z: -100 },
+      { x: 100, z: 0 },
+    )
+    expect(hit).not.toBeNull()
+    expect(hit!.x).toBeCloseTo(50, 6)
+    expect(hit!.z).toBeCloseTo(-50, 6)
+  })
+
+  test('returns null for parallel segments', () => {
+    expect(
+      segmentIntersection(
+        { x: 0, z: 0 },
+        { x: 100, z: 0 },
+        { x: 0, z: -50 },
+        { x: 100, z: -50 },
+      ),
+    ).toBeNull()
+  })
+
+  test('returns null for colinear segments (overlap is handled elsewhere)', () => {
+    expect(
+      segmentIntersection(
+        { x: 0, z: 0 },
+        { x: 100, z: 0 },
+        { x: 50, z: 0 },
+        { x: 200, z: 0 },
+      ),
+    ).toBeNull()
+  })
+
+  test('returns null when they only share an endpoint (no proper crossing)', () => {
+    expect(
+      segmentIntersection(
+        { x: 0, z: 0 },
+        { x: 100, z: 0 },
+        { x: 100, z: 0 },
+        { x: 200, z: -50 },
+      ),
+    ).toBeNull()
+  })
+
+  test('returns null at a pure T-junction (existing renode pass handles it)', () => {
+    // (50,0) sits on the first segment's interior but is the endpoint of the
+    // second segment -- not a proper crossing.
+    expect(
+      segmentIntersection(
+        { x: 0, z: 0 },
+        { x: 100, z: 0 },
+        { x: 50, z: 0 },
+        { x: 50, z: -50 },
+      ),
+    ).toBeNull()
   })
 })

@@ -129,6 +129,35 @@ export function coordKey(x: number, z: number, tol = 1e-3): string {
   return `${qx}:${qz}`
 }
 
+/**
+ * Strict proper intersection of two segments. Returns the intersection
+ * point in world coordinates, or null when the segments are parallel,
+ * colinear, only touch at a shared endpoint, or only kiss at an endpoint
+ * lying on the other segment's interior (the latter case is a T-junction
+ * that the existing renode pass handles).
+ */
+export function segmentIntersection(
+  a0: Vec2,
+  a1: Vec2,
+  b0: Vec2,
+  b1: Vec2,
+): Vec2 | null {
+  const dx1 = a1.x - a0.x
+  const dz1 = a1.z - a0.z
+  const dx2 = b1.x - b0.x
+  const dz2 = b1.z - b0.z
+  const denom = dx1 * dz2 - dz1 * dx2
+  if (denom === 0) return null
+  const ex = b0.x - a0.x
+  const ez = b0.z - a0.z
+  const t = (ex * dz2 - ez * dx2) / denom
+  const u = (ex * dz1 - ez * dx1) / denom
+  const EPS = 1e-9
+  if (t <= EPS || t >= 1 - EPS) return null
+  if (u <= EPS || u >= 1 - EPS) return null
+  return { x: a0.x + t * dx1, z: a0.z + t * dz1 }
+}
+
 /** Round to a "nice" 1/2/5 x 10^k step. */
 export function niceStep(v: number): number {
   if (!(v > 0)) return 1
