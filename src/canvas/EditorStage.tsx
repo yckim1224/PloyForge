@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Circle, Layer, Line, Rect, Stage } from 'react-konva'
+import { Circle, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import type Konva from 'konva'
 import { redoEdit, undoEdit, useEditorStore } from '../store/editorStore'
 import { useSettingsStore } from '../store/settingsStore'
@@ -245,9 +245,9 @@ export function EditorStage() {
   // Auto-show a hidden layer when items of that kind become selected
   // (e.g. checked from the panel) so ghost selections never linger.
   useEffect(() => {
-    if (selection.pointIds.length > 0 && !layerPoints) setLayer('points', true)
-    if (selection.lineIds.length > 0 && !layerLines) setLayer('lines', true)
-    if (selection.faceIds.length > 0 && !layerFaces) setLayer('faces', true)
+    if (selection.pointIds.length > 0 && layerPoints === 'off') setLayer('points', 'on')
+    if (selection.lineIds.length > 0 && layerLines === 'off') setLayer('lines', 'on')
+    if (selection.faceIds.length > 0 && layerFaces === 'off') setLayer('faces', 'on')
   }, [
     selection.pointIds,
     selection.lineIds,
@@ -506,7 +506,7 @@ export function EditorStage() {
           )}
 
           {/* Faces, filled by the Type from `faceTypes` (gray when unassigned). */}
-          {layerFaces && (
+          {layerFaces !== 'off' && (
           <Layer>
             {faces.map((f) => {
               const verts = faceVerts(f.pointIds)
@@ -534,7 +534,7 @@ export function EditorStage() {
           </Layer>
           )}
 
-          {layerLines && (
+          {layerLines !== 'off' && (
           <Layer>
             {lines.map((seg) => {
               const p0 = byId.get(seg.p0)
@@ -560,7 +560,7 @@ export function EditorStage() {
           </Layer>
           )}
 
-          {layerPoints && (
+          {layerPoints !== 'off' && (
           <Layer>
             {points.map((p) => {
               const s = worldToScreen(vp, p.x, p.z)
@@ -581,6 +581,71 @@ export function EditorStage() {
               )
             })}
           </Layer>
+          )}
+
+          {(layerPoints === 'labeled' || layerLines === 'labeled' || layerFaces === 'labeled') && (
+            <Layer listening={false}>
+              {layerFaces === 'labeled' &&
+                faces.map((f, i) => {
+                  const s = worldToScreen(vp, f.centroid.x, f.centroid.z)
+                  return (
+                    <Text
+                      key={`fl-${f.id}`}
+                      x={s.sx - 12}
+                      y={s.sy - 6}
+                      text={`F${i}`}
+                      fontSize={11}
+                      fontStyle="bold"
+                      fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                      fill="#1f2937"
+                      shadowColor="#ffffff"
+                      shadowBlur={3}
+                      shadowOpacity={0.9}
+                    />
+                  )
+                })}
+              {layerLines === 'labeled' &&
+                lines.map((seg, i) => {
+                  const p0 = byId.get(seg.p0)
+                  const p1 = byId.get(seg.p1)
+                  if (!p0 || !p1) return null
+                  const mx = (p0.x + p1.x) / 2
+                  const mz = (p0.z + p1.z) / 2
+                  const s = worldToScreen(vp, mx, mz)
+                  return (
+                    <Text
+                      key={`ll-${seg.id}`}
+                      x={s.sx + 4}
+                      y={s.sy - 14}
+                      text={`L${i}`}
+                      fontSize={10}
+                      fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                      fill="#1f2937"
+                      shadowColor="#ffffff"
+                      shadowBlur={2}
+                      shadowOpacity={0.9}
+                    />
+                  )
+                })}
+              {layerPoints === 'labeled' &&
+                points.map((p, i) => {
+                  const s = worldToScreen(vp, p.x, p.z)
+                  return (
+                    <Text
+                      key={`pl-${p.id}`}
+                      x={s.sx + pointSettings.radius + 3}
+                      y={s.sy - pointSettings.radius - 8}
+                      text={`P${i}`}
+                      fontSize={10}
+                      fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                      fill="#1f2937"
+                      shadowColor="#ffffff"
+                      shadowBlur={2}
+                      shadowOpacity={0.9}
+                    />
+                  )
+                })}
+            </Layer>
           )}
 
           <Layer listening={false}>

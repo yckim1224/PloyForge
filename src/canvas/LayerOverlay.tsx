@@ -1,5 +1,5 @@
 import { Circle, Eye, EyeOff, Grid3x3, Hexagon, Spline } from 'lucide-react'
-import { useLayerStore, type LayerKey } from '../store/layerStore'
+import { useLayerStore, type LayerKey, type LayerMode } from '../store/layerStore'
 
 const LAYERS: { id: LayerKey; label: string; Icon: typeof Grid3x3 }[] = [
   { id: 'grid', label: 'Grid', Icon: Grid3x3 },
@@ -7,6 +7,10 @@ const LAYERS: { id: LayerKey; label: string; Icon: typeof Grid3x3 }[] = [
   { id: 'lines', label: 'Lines', Icon: Spline },
   { id: 'faces', label: 'Faces', Icon: Hexagon },
 ]
+
+function modeLabel(mode: LayerMode): string {
+  return mode === 'labeled' ? 'on + IDs' : mode
+}
 
 export function LayerOverlay() {
   const grid = useLayerStore((s) => s.grid)
@@ -16,7 +20,7 @@ export function LayerOverlay() {
   const toggle = useLayerStore((s) => s.toggle)
   const setAll = useLayerStore((s) => s.setAll)
 
-  const visible: Record<LayerKey, boolean> = { grid, points, lines, faces }
+  const state: Record<LayerKey, boolean | LayerMode> = { grid, points, lines, faces }
 
   return (
     <div
@@ -44,20 +48,35 @@ export function LayerOverlay() {
       </button>
       <div className="my-0.5 h-px bg-neutral-200" />
       {LAYERS.map(({ id, label, Icon }) => {
-        const on = visible[id]
+        const v = state[id]
+        const off = v === false || v === 'off'
+        const labeled = v === 'labeled'
+        const title =
+          id === 'grid'
+            ? `Toggle ${label}`
+            : `Toggle ${label} (${modeLabel(v as LayerMode)})`
         return (
           <button
             key={id}
             type="button"
-            title={`Toggle ${label}`}
+            title={title}
             aria-label={`Toggle ${label}`}
-            aria-pressed={on}
+            aria-pressed={!off}
             onClick={() => toggle(id)}
-            className={`flex size-9 items-center justify-center rounded-md transition-colors ${
-              on ? 'bg-violet-600 text-white' : 'text-neutral-400 hover:bg-neutral-100'
+            className={`relative flex size-9 items-center justify-center rounded-md transition-colors ${
+              off ? 'text-neutral-400 hover:bg-neutral-100' : 'bg-violet-600 text-white'
             }`}
           >
             <Icon className="size-4" />
+            {labeled && (
+              <span
+                aria-hidden
+                data-testid={`label-badge-${id}`}
+                className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-violet-900 text-[9px] font-bold leading-none text-white ring-1 ring-white"
+              >
+                A
+              </span>
+            )}
           </button>
         )
       })}
