@@ -506,12 +506,17 @@ describe('editorStore', () => {
     expect(store().lines.map((l) => l.id)).toEqual([ca, ab, bc])
   })
 
-  test('sortPointsBy reorders by the chosen coordinate', () => {
+  test('sortPointsBy honors direction (screen-orientation friendly)', () => {
     store().addPoint(50, -50)
     store().addPoint(10, -90)
     store().addPoint(90, -10)
-    store().sortPointsBy('x')
+    // Left -> right == x ascending.
+    store().sortPointsBy('x', 'asc')
     expect(store().points.map((p) => p.x)).toEqual([10, 50, 90])
+    // Top -> bottom == z descending (z=0 is the surface; deeper is more negative).
+    store().sortPointsBy('z', 'desc')
+    expect(store().points.map((p) => p.z)).toEqual([-10, -50, -90])
+    // Default direction is ascending for back-compat.
     store().sortPointsBy('z')
     expect(store().points.map((p) => p.z)).toEqual([-90, -50, -10])
   })

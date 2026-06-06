@@ -111,14 +111,14 @@ export function PointsSection() {
       }
       items={[
         {
-          key: 'sort-x',
-          label: 'Sort by X',
-          onSelect: () => useEditorStore.getState().sortPointsBy('x'),
+          key: 'sort-lr',
+          label: 'Sort left → right',
+          onSelect: () => useEditorStore.getState().sortPointsBy('x', 'asc'),
         },
         {
-          key: 'sort-z',
-          label: 'Sort by Z',
-          onSelect: () => useEditorStore.getState().sortPointsBy('z'),
+          key: 'sort-tb',
+          label: 'Sort top → bottom',
+          onSelect: () => useEditorStore.getState().sortPointsBy('z', 'desc'),
         },
         {
           key: 'remove-isolated',

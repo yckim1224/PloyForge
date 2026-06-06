@@ -136,8 +136,12 @@ export interface EditorState {
   movePointToIndex: (id: string, index: number) => void
   /** Move a line to a new display slot; the surrounding rows shift to fill. */
   moveLineToIndex: (id: string, index: number) => void
-  /** Reorder the points array by a coordinate key (ascending). */
-  sortPointsBy: (key: 'x' | 'z') => void
+  /**
+   * Reorder the points array by a coordinate key. Default ascending; pass
+   * `desc` to reverse. Screen convention: ascending x = left -> right,
+   * descending z = top -> bottom (z=0 is the surface; smaller z is deeper).
+   */
+  sortPointsBy: (key: 'x' | 'z', direction?: 'asc' | 'desc') => void
   /** Drop every point that no line references. */
   removeIsolatedPoints: () => void
 
@@ -570,8 +574,9 @@ export const useEditorStore = create<EditorState>()(
     })
   },
 
-  sortPointsBy: (key) => {
-    set((s) => ({ points: [...s.points].sort((a, b) => a[key] - b[key]) }))
+  sortPointsBy: (key, direction = 'asc') => {
+    const sign = direction === 'desc' ? -1 : 1
+    set((s) => ({ points: [...s.points].sort((a, b) => sign * (a[key] - b[key])) }))
   },
 
   removeIsolatedPoints: () => {
