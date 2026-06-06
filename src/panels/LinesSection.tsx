@@ -77,6 +77,11 @@ export function LinesSection() {
         header: 'ID',
         render: (_l, idx) => idx,
         className: 'w-10 text-neutral-500',
+        edit: {
+          type: 'number',
+          parse: parseIntOrNull,
+          onCommit: (l, _idx, v) => useEditorStore.getState().moveLineToIndex(l.id, v),
+        },
       },
       {
         key: 'p0',

@@ -130,6 +130,14 @@ export interface EditorState {
   autoAssignBoundaryFlags: (ids?: string[]) => void
   removePoints: (ids: string[]) => void
   removeLines: (ids: string[]) => void
+  /** Move a point to a new display slot; the surrounding rows shift to fill. */
+  movePointToIndex: (id: string, index: number) => void
+  /** Move a line to a new display slot; the surrounding rows shift to fill. */
+  moveLineToIndex: (id: string, index: number) => void
+  /** Reorder the points array by a coordinate key (ascending). */
+  sortPointsBy: (key: 'x' | 'z') => void
+  /** Drop every point that no line references. */
+  removeIsolatedPoints: () => void
 
   // Face Types (face-keyed material/size map)
   setFaceType: (faceId: string, mattype: number, size?: number) => void
@@ -481,6 +489,47 @@ export const useEditorStore = create<EditorState>()(
       },
     }))
     get().recomputeFaces()
+  },
+
+  movePointToIndex: (id, index) => {
+    set((s) => {
+      const cur = s.points.findIndex((p) => p.id === id)
+      if (cur < 0) return {}
+      const target = Math.max(0, Math.min(s.points.length - 1, index))
+      if (cur === target) return {}
+      const next = s.points.slice()
+      const [item] = next.splice(cur, 1)
+      next.splice(target, 0, item)
+      return { points: next }
+    })
+  },
+
+  moveLineToIndex: (id, index) => {
+    set((s) => {
+      const cur = s.lines.findIndex((l) => l.id === id)
+      if (cur < 0) return {}
+      const target = Math.max(0, Math.min(s.lines.length - 1, index))
+      if (cur === target) return {}
+      const next = s.lines.slice()
+      const [item] = next.splice(cur, 1)
+      next.splice(target, 0, item)
+      return { lines: next }
+    })
+  },
+
+  sortPointsBy: (key) => {
+    set((s) => ({ points: [...s.points].sort((a, b) => a[key] - b[key]) }))
+  },
+
+  removeIsolatedPoints: () => {
+    const { points, lines } = get()
+    const used = new Set<string>()
+    for (const l of lines) {
+      used.add(l.p0)
+      used.add(l.p1)
+    }
+    const orphans = points.filter((p) => !used.has(p.id)).map((p) => p.id)
+    if (orphans.length > 0) get().removePoints(orphans)
   },
 
   setFaceType: (faceId, mattype, size = -1) => {

@@ -467,4 +467,59 @@ describe('editorStore', () => {
     expect(store().faces[0].mattype).toBe(7)
     expect(useSettingsStore.getState().materials.some((m) => m.mattype === 7)).toBe(true)
   })
+
+  test('movePointToIndex shuffles a point to a new slot, preserving line uids', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    store().addLine(a, c) // line uses uids; display indices should not affect this
+    expect(store().points.map((p) => p.id)).toEqual([a, b, c])
+
+    store().movePointToIndex(c, 0)
+    expect(store().points.map((p) => p.id)).toEqual([c, a, b])
+    // Line still references the same uids; only the display indices changed.
+    expect(store().lines[0].p0).toBe(a)
+    expect(store().lines[0].p1).toBe(c)
+  })
+
+  test('movePointToIndex clamps out-of-range indices to the array bounds', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    store().movePointToIndex(a, 999)
+    expect(store().points.map((p) => p.id)).toEqual([b, c, a])
+    store().movePointToIndex(a, -5)
+    expect(store().points.map((p) => p.id)).toEqual([a, b, c])
+  })
+
+  test('moveLineToIndex shuffles a line to a new slot', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const ab = store().addLine(a, b)!
+    const bc = store().addLine(b, c)!
+    const ca = store().addLine(c, a)!
+    expect(store().lines.map((l) => l.id)).toEqual([ab, bc, ca])
+    store().moveLineToIndex(ca, 0)
+    expect(store().lines.map((l) => l.id)).toEqual([ca, ab, bc])
+  })
+
+  test('sortPointsBy reorders by the chosen coordinate', () => {
+    store().addPoint(50, -50)
+    store().addPoint(10, -90)
+    store().addPoint(90, -10)
+    store().sortPointsBy('x')
+    expect(store().points.map((p) => p.x)).toEqual([10, 50, 90])
+    store().sortPointsBy('z')
+    expect(store().points.map((p) => p.z)).toEqual([-90, -50, -10])
+  })
+
+  test('removeIsolatedPoints drops points unreferenced by any line', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().addPoint(50, -50) // isolated
+    store().addLine(a, b)
+    store().removeIsolatedPoints()
+    expect(store().points.map((p) => p.id)).toEqual([a, b])
+  })
 })

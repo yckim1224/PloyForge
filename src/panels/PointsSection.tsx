@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
+import { MoreHorizontal } from 'lucide-react'
 import { CollapsibleSection } from '../components/CollapsibleSection'
 import { EntityTable, type Column } from '../components/EntityTable'
 import { AddRow, type AddRowField } from '../components/AddRow'
 import { SelectionBar } from '../components/SelectionBar'
 import { ConfirmModal } from '../components/ConfirmModal'
+import { Menu } from '../components/Menu'
 import { useEditorStore } from '../store/editorStore'
 import type { Point } from '../types'
 
@@ -56,6 +58,11 @@ export function PointsSection() {
         header: 'ID',
         render: (_p, idx) => idx,
         className: 'w-10 text-neutral-500',
+        edit: {
+          type: 'number',
+          parse: parseIntOrNull,
+          onCommit: (p, _idx, v) => useEditorStore.getState().movePointToIndex(p.id, v),
+        },
       },
       {
         key: 'x',
@@ -90,8 +97,41 @@ export function PointsSection() {
     return { ok: true }
   }
 
+  const headerMenu = (
+    <Menu
+      align="right"
+      trigger={
+        <button
+          type="button"
+          aria-label="Points actions"
+          className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+        >
+          <MoreHorizontal className="size-4" />
+        </button>
+      }
+      items={[
+        {
+          key: 'sort-x',
+          label: 'Sort by X',
+          onSelect: () => useEditorStore.getState().sortPointsBy('x'),
+        },
+        {
+          key: 'sort-z',
+          label: 'Sort by Z',
+          onSelect: () => useEditorStore.getState().sortPointsBy('z'),
+        },
+        {
+          key: 'remove-isolated',
+          label: 'Remove isolated points',
+          destructive: true,
+          onSelect: () => useEditorStore.getState().removeIsolatedPoints(),
+        },
+      ]}
+    />
+  )
+
   return (
-    <CollapsibleSection title="Points" count={points.length}>
+    <CollapsibleSection title="Points" count={points.length} headerRight={headerMenu}>
       <EntityTable
         columns={columns}
         rows={points}
