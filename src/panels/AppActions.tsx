@@ -1,12 +1,15 @@
 import { useRef, useState } from 'react'
 import { Button } from '@heroui/react'
 import {
+  CircleCheck,
   CircleX,
   Download,
   Eraser,
   Settings2,
+  ShieldCheck,
   TriangleAlert,
   Upload,
+  X,
 } from 'lucide-react'
 import { useEditorStore } from '../store/editorStore'
 import { serializePoly } from '../poly/serialize'
@@ -79,6 +82,11 @@ export function AppActions() {
     URL.revokeObjectURL(url)
   }
 
+  const onValidate = () => {
+    setIssues(validateDocument(toDocument()))
+    setExportWarning(null)
+  }
+
   const onSettings = () => setSettingsOpen(true)
 
   const onClear = () => setConfirmClear(true)
@@ -106,9 +114,13 @@ export function AppActions() {
           <Settings2 className="size-4" />
           Settings
         </Button>
-        <Button size="sm" variant="primary" onPress={onExport}>
+        <Button size="sm" variant="secondary" onPress={onExport}>
           <Download className="size-4" />
           Export .poly
+        </Button>
+        <Button size="sm" variant="secondary" onPress={onValidate}>
+          <ShieldCheck className="size-4" />
+          Validate
         </Button>
         <Button size="sm" variant="secondary" onPress={onClear}>
           <Eraser className="size-4" />
@@ -159,6 +171,21 @@ export function AppActions() {
       />
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {issues && issues.length === 0 && (
+        <div className="flex items-center gap-1.5 rounded-md bg-emerald-50 p-2 text-xs text-emerald-700">
+          <CircleCheck className="size-4 shrink-0" />
+          <span className="flex-1">No issues found.</span>
+          <button
+            type="button"
+            aria-label="Dismiss validation result"
+            onClick={() => setIssues(null)}
+            className="-m-1 rounded p-1 text-emerald-700/70 transition-colors hover:bg-emerald-100 hover:text-emerald-800"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
 
       {issues && issues.length > 0 && (
         <ul className="flex flex-col gap-1 text-xs">
