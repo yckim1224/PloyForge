@@ -3,9 +3,12 @@ import { useStore } from 'zustand'
 import { Hammer, Moon, Redo2, Sun, Undo2 } from 'lucide-react'
 import { ResizableSplit } from './components/ResizableSplit'
 import { ToastViewport } from './components/ToastViewport'
+import { ConfirmModal } from './components/ConfirmModal'
+import { DropZone } from './components/DropZone'
 import { EditorStage } from './canvas/EditorStage'
 import { ControlPanel } from './panels/ControlPanel'
-import { redoEdit, undoEdit, useEditorStore } from './store/editorStore'
+import { hasGeometry, redoEdit, undoEdit, useEditorStore } from './store/editorStore'
+import { useImportStore } from './store/importStore'
 import {
   loadSettings,
   saveSettings,
@@ -84,6 +87,28 @@ function AppBar() {
   )
 }
 
+/**
+ * Single overwrite-confirmation for the import flow, driven by importStore.
+ * Both the Import button and the full-window DropZone funnel through the same
+ * pending state, so this is the only place the prompt is rendered.
+ */
+function ImportConfirmModal() {
+  const pending = useImportStore((s) => s.pending)
+  const confirm = useImportStore((s) => s.confirm)
+  const cancel = useImportStore((s) => s.cancel)
+  return (
+    <ConfirmModal
+      open={pending !== null}
+      title="Unsaved work"
+      message={`Your current work is not saved. Importing "${pending?.fileName ?? ''}" will replace it. Continue?`}
+      destructive
+      confirmLabel="Import"
+      onCancel={cancel}
+      onConfirm={confirm}
+    />
+  )
+}
+
 function App() {
   // Apply the saved theme and hydrate persisted display preferences on first
   // mount. The DOCUMENT itself is intentionally NOT persisted -- a refresh
@@ -138,8 +163,7 @@ function App() {
     // you made may not be saved"); preventDefault + returnValue is the
     // canonical way to opt in.
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      const s = useEditorStore.getState()
-      if (s.points.length === 0 && s.lines.length === 0) return
+      if (!hasGeometry(useEditorStore.getState())) return
       e.preventDefault()
       e.returnValue = ''
     }
@@ -175,6 +199,8 @@ function App() {
       <div className="min-h-0 flex-1">
         <ResizableSplit left={<ControlPanel />} right={<EditorStage />} />
       </div>
+      <DropZone />
+      <ImportConfirmModal />
       <ToastViewport />
     </div>
   )

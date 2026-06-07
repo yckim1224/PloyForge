@@ -706,6 +706,15 @@ export const useEditorStore = create<EditorState>()(
   ),
 )
 
+/**
+ * True when the document holds any geometry. This is the single source of
+ * truth for "there is unsaved work" -- the document is never persisted, so a
+ * separate dirty flag would have nothing to compare against. Shared by the
+ * beforeunload guard and the import flow.
+ */
+export const hasGeometry = (s: Pick<EditorState, 'points' | 'lines'>): boolean =>
+  s.points.length > 0 || s.lines.length > 0
+
 /** Undo the last geometry change and refresh derived faces. */
 export function undoEdit() {
   useEditorStore.temporal.getState().undo()

@@ -12,46 +12,30 @@ import {
   X,
 } from 'lucide-react'
 import { useEditorStore } from '../store/editorStore'
+import { useImportStore } from '../store/importStore'
 import { serializePoly } from '../poly/serialize'
-import { parsePoly } from '../poly/parse'
 import { validateDocument, type ValidationIssue } from '../poly/validate'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { SettingsModal } from './SettingsModal'
 
 export function AppActions() {
   const toDocument = useEditorStore((s) => s.toDocument)
-  const loadDocument = useEditorStore((s) => s.loadDocument)
+  const requestImport = useImportStore((s) => s.requestImport)
   const fileRef = useRef<HTMLInputElement>(null)
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null)
-  const [warnings, setWarnings] = useState<string[]>([])
-  const [importError, setImportError] = useState<string | null>(null)
   const [exportWarning, setExportWarning] = useState<string | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const onImportClick = () => fileRef.current?.click()
 
-  const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Both this button and the full-window DropZone route through importStore so
+  // the unsaved-work guard and toast feedback stay identical across entry points.
+  const onImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
-    try {
-      const text = await file.text()
-      const result = parsePoly(text)
-      loadDocument(result.doc, result.discoveredMaterials)
-      // File import replaces the entire document; undoing into a half-imported
-      // state would surprise users, so it sits outside the undo history.
-      useEditorStore.temporal.getState().clear()
-      setWarnings(result.warnings)
-      setImportError(null)
-      setIssues(null)
-      setExportWarning(null)
-    } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Could not parse the .poly file.')
-      setWarnings([])
-    } finally {
-      // Always reset so re-selecting the same file fires another change event.
-      e.target.value = ''
-    }
+    if (file) void requestImport(file)
+    // Reset so re-selecting the same file fires another change event.
+    e.target.value = ''
   }
 
   const onExport = () => {
@@ -94,9 +78,7 @@ export function AppActions() {
   const doClear = () => {
     useEditorStore.getState().reset()
     useEditorStore.temporal.getState().clear()
-    setWarnings([])
     setIssues(null)
-    setImportError(null)
     setExportWarning(null)
     setConfirmClear(false)
   }
@@ -135,29 +117,11 @@ export function AppActions() {
         className="hidden"
       />
 
-      {importError && (
-        <p className="flex items-start gap-1.5 rounded-md bg-red-50 p-2 text-xs text-red-700">
-          <CircleX className="mt-0.5 size-3.5 shrink-0" />
-          Import failed: {importError}
-        </p>
-      )}
-
       {exportWarning && (
         <p className="flex items-start gap-1.5 rounded-md bg-amber-50 p-2 text-xs text-amber-700">
           <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
           {exportWarning}
         </p>
-      )}
-
-      {warnings.length > 0 && (
-        <ul className="flex flex-col gap-1 rounded-md bg-amber-50 p-2 text-xs text-amber-700">
-          {warnings.map((w, i) => (
-            <li key={i} className="flex items-start gap-1.5">
-              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-              {w}
-            </li>
-          ))}
-        </ul>
       )}
 
       <ConfirmModal

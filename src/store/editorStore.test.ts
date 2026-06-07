@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'vitest'
-import { useEditorStore } from './editorStore'
+import { hasGeometry, useEditorStore } from './editorStore'
 import { useSettingsStore, defaultSettings } from './settingsStore'
 import { serializePoly } from '../poly/serialize'
 
@@ -11,6 +11,14 @@ beforeEach(() => {
 })
 
 describe('editorStore', () => {
+  test('hasGeometry reflects whether any point or line exists', () => {
+    expect(hasGeometry(store())).toBe(false)
+    const a = store().addPoint(0, 0)
+    expect(hasGeometry(store())).toBe(true)
+    store().removePoints([a])
+    expect(hasGeometry(store())).toBe(false)
+  })
+
   test('addPoint dedupes identical coordinates', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(0, 0)
