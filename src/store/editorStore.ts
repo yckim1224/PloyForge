@@ -91,6 +91,8 @@ export interface EditorState {
   deleteSelection: () => void
   /** Move the current selection by one (or 10x) grid step along a unit direction. */
   nudgeSelection: (dirX: number, dirZ: number, large: boolean) => void
+  /** Translate the current selection by an arbitrary world delta (mouse-drag commit). */
+  translateSelectionBy: (dx: number, dz: number) => void
 
   // Geometry mutations
   addPoint: (x: number, z: number) => string
@@ -176,6 +178,32 @@ function lineExists(lines: Line[], a: string, b: string): boolean {
   )
 }
 
+/**
+ * Every point id referenced by the current selection: selected points directly,
+ * both endpoints of selected lines, and every vertex of selected faces. Faces are
+ * keyed by sorted point ids, so translating all of a face's vertices together
+ * preserves its faceId (and thus its faceTypes entry). Shared by nudgeSelection
+ * and translateSelectionBy.
+ */
+export function collectSelectionPointIds(
+  s: Pick<EditorState, 'selection' | 'lines' | 'faces'>,
+): Set<string> {
+  const ids = new Set<string>(s.selection.pointIds)
+  const lineById = new Map(s.lines.map((seg) => [seg.id, seg]))
+  for (const id of s.selection.lineIds) {
+    const seg = lineById.get(id)
+    if (seg) {
+      ids.add(seg.p0)
+      ids.add(seg.p1)
+    }
+  }
+  const faceById = new Map(s.faces.map((f) => [f.id, f]))
+  for (const id of s.selection.faceIds) {
+    faceById.get(id)?.pointIds.forEach((pid) => ids.add(pid))
+  }
+  return ids
+}
+
 export const useEditorStore = create<EditorState>()(
   temporal(
     (set, get) => ({
@@ -251,37 +279,33 @@ export const useEditorStore = create<EditorState>()(
   },
 
   nudgeSelection: (dirX, dirZ, large) => {
-    const s = get()
-    const sel = s.selection
-    const hasSel = sel.pointIds.length || sel.lineIds.length || sel.faceIds.length
-    if (!hasSel) return
+    const movePts = collectSelectionPointIds(get())
+    if (movePts.size === 0) return
     const spacing = useSettingsStore.getState().grid.spacing
     const step = spacing * (large ? 10 : 1)
     const dx = dirX * step
     const dz = dirZ * step
-
-    // Every point referenced by the selection (directly, or via lines/faces) moves once.
-    // Faces are keyed by sorted-pointIds, so translating every vertex preserves
-    // the faceId and therefore the faceTypes entry.
-    const movePts = new Set<string>(sel.pointIds)
-    const lineById = new Map(s.lines.map((seg) => [seg.id, seg]))
-    for (const id of sel.lineIds) {
-      const seg = lineById.get(id)
-      if (seg) {
-        movePts.add(seg.p0)
-        movePts.add(seg.p1)
-      }
-    }
-    const faceById = new Map(s.faces.map((f) => [f.id, f]))
-    for (const id of sel.faceIds) {
-      faceById.get(id)?.pointIds.forEach((pid) => movePts.add(pid))
-    }
-
     set((st) => ({
       points: st.points.map((p) =>
         movePts.has(p.id) ? { ...p, x: p.x + dx, z: p.z + dz } : p,
       ),
     }))
+    get().recomputeFaces()
+  },
+
+  translateSelectionBy: (dx, dz) => {
+    if (dx === 0 && dz === 0) return
+    const movePts = collectSelectionPointIds(get())
+    if (movePts.size === 0) return
+    set((st) => ({
+      points: st.points.map((p) =>
+        movePts.has(p.id) ? { ...p, x: p.x + dx, z: p.z + dz } : p,
+      ),
+    }))
+    // Topology is finalized only here (on the drag-end commit), matching point
+    // placement / line drawing. renode + recompute run in the same synchronous
+    // burst as the move, so handleSet batching records exactly one undo entry.
+    get().renode()
     get().recomputeFaces()
   },
 

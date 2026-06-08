@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Circle, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import type Konva from 'konva'
-import { redoEdit, undoEdit, useEditorStore } from '../store/editorStore'
+import { collectSelectionPointIds, redoEdit, undoEdit, useEditorStore } from '../store/editorStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { useLayerStore } from '../store/layerStore'
 import { toast } from '../store/toastStore'
@@ -29,6 +29,7 @@ import {
   pointsInRect,
   type ScreenRect,
 } from './selection'
+import { exceededDragThreshold, isDraggableTarget, snapDelta } from './drag'
 
 const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
@@ -92,6 +93,16 @@ export function EditorStage() {
     null,
   )
   const justMarqueed = useRef(false)
+  // Move-drag handler-only bookkeeping: the press point and whether the drag
+  // threshold has been crossed. (Render-facing drag data lives in `drag` state
+  // below.) The store is mutated only once, on drop.
+  const dragStart = useRef<{ x: number; y: number; moved: boolean } | null>(null)
+  // Set when a real drag just ended, so the trailing click is swallowed.
+  const justDragged = useRef(false)
+  // Render-facing drag state: the point ids being moved plus the live world
+  // delta. Kept in state (not a ref) so the canvas re-renders the offset and so
+  // it is never read from a ref during render. null = no active drag.
+  const [drag, setDrag] = useState<{ ids: Set<string>; dx: number; dz: number } | null>(null)
 
   const points = useEditorStore((s) => s.points)
   const lines = useEditorStore((s) => s.lines)
@@ -119,6 +130,7 @@ export function EditorStage() {
   const selectMany = useEditorStore((s) => s.selectMany)
   const toggleSelect = useEditorStore((s) => s.toggleSelect)
   const nudgeSelection = useEditorStore((s) => s.nudgeSelection)
+  const translateSelectionBy = useEditorStore((s) => s.translateSelectionBy)
   const clearSelection = useEditorStore((s) => s.clearSelection)
   const setTool = useEditorStore((s) => s.setTool)
   const setPendingLineStart = useEditorStore((s) => s.setPendingLineStart)
@@ -258,7 +270,15 @@ export function EditorStage() {
     setLayer,
   ])
 
-  const byId = new Map(points.map((p) => [p.id, p]))
+  // During a move drag, render the moved points (and the lines/faces that
+  // reference them) offset by the live delta -- no store mutation until drop.
+  const activeDrag = drag && (drag.dx !== 0 || drag.dz !== 0) ? drag : null
+  const renderPoints = activeDrag
+    ? points.map((p) =>
+        activeDrag.ids.has(p.id) ? { ...p, x: p.x + activeDrag.dx, z: p.z + activeDrag.dz } : p,
+      )
+    : points
+  const byId = new Map(renderPoints.map((p) => [p.id, p]))
 
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault()
@@ -280,6 +300,18 @@ export function EditorStage() {
       return
     }
     if (tool === 'select' && e.evt.button === 0) {
+      // R2: a plain press on an already-selected item begins a move drag.
+      // Modifier presses stay reserved for marquee target switching below.
+      if (!e.evt.shiftKey && !e.evt.ctrlKey && !e.evt.metaKey) {
+        const node = e.target
+        const name = typeof node.name === 'function' ? node.name() : ''
+        const id = typeof node.id === 'function' ? node.id() : ''
+        if (isDraggableTarget(name, id, selection)) {
+          dragStart.current = { x: p.x, y: p.y, moved: false }
+          setDrag({ ids: collectSelectionPointIds(useEditorStore.getState()), dx: 0, dz: 0 })
+          return
+        }
+      }
       const target = e.evt.shiftKey
         ? 'line'
         : e.evt.ctrlKey || e.evt.metaKey
@@ -323,6 +355,18 @@ export function EditorStage() {
       const w = screenToWorld(vp, p.x, p.y)
       hudRef.current.textContent = formatHud(w.x, w.z, vp.scale)
     }
+    if (dragStart.current) {
+      const d = dragStart.current
+      // R1: ignore sub-threshold jitter so a plain click never nudges geometry.
+      if (!d.moved && !exceededDragThreshold(p.x - d.x, p.y - d.y)) return
+      d.moved = true
+      const w0 = screenToWorld(vp, d.x, d.y)
+      const w1 = screenToWorld(vp, p.x, p.y)
+      // R4: snap the delta to grid spacing; Alt frees it. No store mutation here.
+      const snapped = snapDelta(w1.x - w0.x, w1.z - w0.z, gridSettings.spacing, e.evt.altKey)
+      setDrag((cur) => (cur ? { ...cur, dx: snapped.dx, dz: snapped.dz } : cur))
+      return
+    }
     if (panning.current) {
       const dx = p.x - panning.current.x
       const dy = p.y - panning.current.y
@@ -349,6 +393,20 @@ export function EditorStage() {
 
   const finishMarquee = (e: Konva.KonvaEventObject<MouseEvent>) => {
     panning.current = null
+    // End a move drag first (mouseup or leaving the stage). Commit once -> a
+    // single undo entry; a sub-threshold press falls through to a normal click.
+    if (dragStart.current) {
+      const moved = dragStart.current.moved
+      if (moved && drag && (drag.dx !== 0 || drag.dz !== 0)) {
+        translateSelectionBy(drag.dx, drag.dz)
+      }
+      // Any threshold-crossing drag swallows the trailing click so the gesture
+      // never doubles as a selection change (even if it snapped back to zero).
+      if (moved) justDragged.current = true
+      dragStart.current = null
+      setDrag(null)
+      return
+    }
     const ms = marqueeStart.current
     if (!ms) return
     const p = e.target.getStage()?.getPointerPosition() ?? { x: ms.x, y: ms.y }
@@ -380,6 +438,11 @@ export function EditorStage() {
     if (spacePan) return
     if (justMarqueed.current) {
       justMarqueed.current = false
+      return
+    }
+    // A move-drag ends with a click event; swallow it so the selection is kept.
+    if (justDragged.current) {
+      justDragged.current = false
       return
     }
     const stage = e.target.getStage()
@@ -457,13 +520,15 @@ export function EditorStage() {
   const startPt = pendingLineStart ? byId.get(pendingLineStart) : undefined
   const startScreen = startPt ? worldToScreen(vp, startPt.x, startPt.z) : null
 
-  const cursor = spacePan
-    ? 'grab'
-    : tool === 'pan'
+  const cursor = drag
+    ? 'grabbing'
+    : spacePan
       ? 'grab'
-      : tool === 'point' || tool === 'line'
-        ? 'crosshair'
-        : 'default'
+      : tool === 'pan'
+        ? 'grab'
+        : tool === 'point' || tool === 'line'
+          ? 'crosshair'
+          : 'default'
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-100">
@@ -562,7 +627,7 @@ export function EditorStage() {
 
           {layerPoints !== 'off' && (
           <Layer>
-            {points.map((p) => {
+            {renderPoints.map((p) => {
               const s = worldToScreen(vp, p.x, p.z)
               const selected = selPoints.has(p.id)
               return (
@@ -628,7 +693,7 @@ export function EditorStage() {
                   )
                 })}
               {layerPoints === 'labeled' &&
-                points.map((p, i) => {
+                renderPoints.map((p, i) => {
                   const s = worldToScreen(vp, p.x, p.z)
                   return (
                     <Text

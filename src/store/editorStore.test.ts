@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'vitest'
-import { hasGeometry, useEditorStore } from './editorStore'
+import { collectSelectionPointIds, hasGeometry, useEditorStore } from './editorStore'
 import { useSettingsStore, defaultSettings } from './settingsStore'
 import { serializePoly } from '../poly/serialize'
 
@@ -284,6 +284,80 @@ describe('editorStore', () => {
     expect(store().faces[0].id).toBe(faceId)
     expect(store().faces[0].mattype).toBe(1)
     expect(store().faceTypes[faceId]?.mattype).toBe(1)
+  })
+
+  test('collectSelectionPointIds gathers points, line endpoints, and face vertices', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().selectSingle('point', a)
+    expect(collectSelectionPointIds(store())).toEqual(new Set([a]))
+    const s = store().addLine(a, b)!
+    store().selectSingle('line', s)
+    expect(collectSelectionPointIds(store())).toEqual(new Set([a, b]))
+    store().clearSelection()
+    expect(collectSelectionPointIds(store()).size).toBe(0)
+  })
+
+  test('translateSelectionBy moves the whole selection by a world delta', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(200, 0)
+    const s = store().addLine(a, b)!
+    store().selectSingle('line', s)
+    store().translateSelectionBy(10, -20)
+    expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 10, z: -20 })
+    expect(store().points.find((p) => p.id === b)).toMatchObject({ x: 210, z: -20 })
+  })
+
+  test('translateSelectionBy renodes on commit (point dragged onto a segment)', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().addLine(a, b)
+    const c = store().addPoint(50, -50)
+    store().selectSingle('point', c)
+    expect(store().lines.length).toBe(1)
+    store().translateSelectionBy(0, 50) // c -> (50, 0), on the a-b interior
+    expect(store().points.find((p) => p.id === c)).toMatchObject({ x: 50, z: 0 })
+    expect(store().lines.length).toBe(2)
+  })
+
+  test('translateSelectionBy preserves a face Type when all vertices move together', () => {
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    const c = store().addPoint(100, -100)
+    const d = store().addPoint(0, -100)
+    store().addLine(a, b)
+    store().addLine(b, c)
+    store().addLine(c, d)
+    store().addLine(d, a)
+    const faceId = store().faces[0].id
+    store().setFaceType(faceId, 3)
+    store().selectSingle('face', faceId)
+    store().translateSelectionBy(25, -5)
+    expect(store().faces[0].id).toBe(faceId)
+    expect(store().faces[0].mattype).toBe(3)
+  })
+
+  test('translateSelectionBy is a single undo step', async () => {
+    const a = store().addPoint(0, 0)
+    store().selectSingle('point', a)
+    const temporal = useEditorStore.temporal
+    temporal.getState().clear()
+    await Promise.resolve() // flush the batching microtask
+    const before = temporal.getState().pastStates.length
+    store().translateSelectionBy(30, 0)
+    expect(temporal.getState().pastStates.length).toBe(before + 1)
+    temporal.getState().undo()
+    expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 0, z: 0 })
+  })
+
+  test('translateSelectionBy is a no-op for zero delta or empty selection', () => {
+    const a = store().addPoint(0, 0)
+    store().clearSelection()
+    store().translateSelectionBy(10, 10)
+    expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 0, z: 0 })
+    store().selectSingle('point', a)
+    store().translateSelectionBy(0, 0)
+    expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 0, z: 0 })
   })
 
   test('deleting a face boundary then undoing restores the Type (A-14)', async () => {
