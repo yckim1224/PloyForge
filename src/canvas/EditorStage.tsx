@@ -292,9 +292,11 @@ export function EditorStage() {
     const stage = e.target.getStage()
     const p = stage?.getPointerPosition()
     if (!p) return
-    // Clear any stale suppress flag from a marquee that ended off-stage (mouseleave
-    // fires no follow-up click to clear it), so this gesture's click isn't swallowed.
+    // Clear stale suppress flags from a gesture that ended off-stage (mouseleave
+    // fires no follow-up click to clear them), so this gesture's click isn't
+    // swallowed. Both a marquee and a move-drag can release off-stage.
     justMarqueed.current = false
+    justDragged.current = false
     if (spacePan || tool === 'pan' || e.evt.button === 1) {
       panning.current = { x: p.x, y: p.y }
       return
