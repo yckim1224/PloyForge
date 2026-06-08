@@ -204,6 +204,11 @@ export function collectSelectionPointIds(
   return ids
 }
 
+/** Return a copy of `points` with every id in `ids` shifted by (dx, dz). */
+function translatePoints(points: Point[], ids: Set<string>, dx: number, dz: number): Point[] {
+  return points.map((p) => (ids.has(p.id) ? { ...p, x: p.x + dx, z: p.z + dz } : p))
+}
+
 export const useEditorStore = create<EditorState>()(
   temporal(
     (set, get) => ({
@@ -285,11 +290,7 @@ export const useEditorStore = create<EditorState>()(
     const step = spacing * (large ? 10 : 1)
     const dx = dirX * step
     const dz = dirZ * step
-    set((st) => ({
-      points: st.points.map((p) =>
-        movePts.has(p.id) ? { ...p, x: p.x + dx, z: p.z + dz } : p,
-      ),
-    }))
+    set((st) => ({ points: translatePoints(st.points, movePts, dx, dz) }))
     get().recomputeFaces()
   },
 
@@ -297,11 +298,7 @@ export const useEditorStore = create<EditorState>()(
     if (dx === 0 && dz === 0) return
     const movePts = collectSelectionPointIds(get())
     if (movePts.size === 0) return
-    set((st) => ({
-      points: st.points.map((p) =>
-        movePts.has(p.id) ? { ...p, x: p.x + dx, z: p.z + dz } : p,
-      ),
-    }))
+    set((st) => ({ points: translatePoints(st.points, movePts, dx, dz) }))
     // Topology is finalized only here (on the drag-end commit), matching point
     // placement / line drawing. renode + recompute run in the same synchronous
     // burst as the move, so handleSet batching records exactly one undo entry.
