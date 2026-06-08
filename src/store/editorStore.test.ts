@@ -217,16 +217,18 @@ describe('editorStore', () => {
     expect(store().faceTypes[parentId]).toEqual({ mattype: 9, size: -1 })
   })
 
-  test('nudgeSelection moves selected points by one grid step (10x with Shift)', () => {
+  test('nudgeSelection scales the grid step (normal / large / fine)', () => {
     useSettingsStore.getState().setGrid({ spacing: 100 })
     const a = store().addPoint(0, 0)
     store().selectSingle('point', a)
-    store().nudgeSelection(1, 0, false) // right
+    store().nudgeSelection(1, 0, 'normal') // right: +100
     expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 100, z: 0 })
-    store().nudgeSelection(0, 1, false) // up = +z
+    store().nudgeSelection(0, 1, 'normal') // up = +z: +100
     expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 100, z: 100 })
-    store().nudgeSelection(-1, 0, true) // left, large step
+    store().nudgeSelection(-1, 0, 'large') // left, large step: -1000
     expect(store().points.find((p) => p.id === a)).toMatchObject({ x: -900, z: 100 })
+    store().nudgeSelection(1, 0, 'fine') // right, fine step: +10 (spacing/10)
+    expect(store().points.find((p) => p.id === a)).toMatchObject({ x: -890, z: 100 })
   })
 
   test('nudgeSelection moves both endpoints of a selected segment', () => {
@@ -235,7 +237,7 @@ describe('editorStore', () => {
     const b = store().addPoint(200, 0)
     const s = store().addLine(a, b)!
     store().selectSingle('line', s)
-    store().nudgeSelection(0, -1, false) // down = -z
+    store().nudgeSelection(0, -1, 'normal') // down = -z
     expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 0, z: -100 })
     expect(store().points.find((p) => p.id === b)).toMatchObject({ x: 200, z: -100 })
   })
@@ -244,7 +246,7 @@ describe('editorStore', () => {
     useSettingsStore.getState().setGrid({ spacing: 100 })
     const a = store().addPoint(0, 0)
     store().clearSelection()
-    store().nudgeSelection(1, 0, false)
+    store().nudgeSelection(1, 0, 'normal')
     expect(store().points.find((p) => p.id === a)).toMatchObject({ x: 0, z: 0 })
   })
 
@@ -284,7 +286,7 @@ describe('editorStore', () => {
     store().setFaceType(faceId, 1)
     expect(store().faceTypes[faceId]?.mattype).toBe(1)
     store().selectSingle('face', faceId)
-    store().nudgeSelection(1, 0, false) // +x by one grid step (10)
+    store().nudgeSelection(1, 0, 'normal') // +x by one grid step (10)
     // The face id is sorted-pointIds, which is unchanged by translation, so
     // the face survives and keeps its Type without any seed-follow code.
     expect(store().faces[0].id).toBe(faceId)

@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Circle, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import type Konva from 'konva'
-import { collectSelectionPointIds, redoEdit, undoEdit, useEditorStore } from '../store/editorStore'
+import {
+  collectSelectionPointIds,
+  redoEdit,
+  undoEdit,
+  useEditorStore,
+  type NudgeScale,
+} from '../store/editorStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { useLayerStore } from '../store/layerStore'
 import { toast } from '../store/toastStore'
@@ -37,6 +43,7 @@ const HUD_EMPTY = 'x —   z —'
 /** Per-keypress view pan step (px) for arrow keys when nothing is selected. */
 const ARROW_PAN_PX = 40
 const ARROW_PAN_LARGE_PX = 200
+const ARROW_PAN_FINE_PX = 8
 
 function StageActions({ onFit }: { onFit: () => void }) {
   return (
@@ -225,15 +232,18 @@ export function EditorStage() {
       }
       // Arrows nudge the selection, or pan the view when nothing is selected
       // (the arrow moves the camera in that direction). Shift = larger step.
-      const arrowMove = (dirX: number, dirZ: number, large: boolean) => {
+      // Alt = fine (1/10), Shift = large (10x); Alt wins when both are held.
+      const arrowMove = (dirX: number, dirZ: number, shift: boolean, alt: boolean) => {
         const sel = useEditorStore.getState().selection
         const hasSelection =
           sel.pointIds.length > 0 || sel.lineIds.length > 0 || sel.faceIds.length > 0
         if (hasSelection) {
-          nudgeSelection(dirX, dirZ, large)
+          const scale: NudgeScale = alt ? 'fine' : shift ? 'large' : 'normal'
+          nudgeSelection(dirX, dirZ, scale)
           return
         }
-        const { dxPx, dyPx } = arrowPanDelta(dirX, dirZ, large ? ARROW_PAN_LARGE_PX : ARROW_PAN_PX)
+        const stepPx = alt ? ARROW_PAN_FINE_PX : shift ? ARROW_PAN_LARGE_PX : ARROW_PAN_PX
+        const { dxPx, dyPx } = arrowPanDelta(dirX, dirZ, stepPx)
         setVp((v) => panBy(v, dxPx, dyPx))
       }
       switch (e.key) {
@@ -268,19 +278,19 @@ export function EditorStage() {
           break
         case 'ArrowRight':
           e.preventDefault()
-          arrowMove(1, 0, e.shiftKey)
+          arrowMove(1, 0, e.shiftKey, e.altKey)
           break
         case 'ArrowLeft':
           e.preventDefault()
-          arrowMove(-1, 0, e.shiftKey)
+          arrowMove(-1, 0, e.shiftKey, e.altKey)
           break
         case 'ArrowUp':
           e.preventDefault()
-          arrowMove(0, 1, e.shiftKey)
+          arrowMove(0, 1, e.shiftKey, e.altKey)
           break
         case 'ArrowDown':
           e.preventDefault()
-          arrowMove(0, -1, e.shiftKey)
+          arrowMove(0, -1, e.shiftKey, e.altKey)
           break
         default:
           return

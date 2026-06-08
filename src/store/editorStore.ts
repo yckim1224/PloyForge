@@ -33,6 +33,8 @@ function pointsBoundingBox(points: Point[]): BoundingBox {
 export type Tool = 'select' | 'point' | 'line' | 'pan'
 export type SelectableKind = 'point' | 'line' | 'face'
 export type MarqueeTarget = 'point' | 'line' | 'face'
+/** Nudge step size: fine = spacing/10, normal = spacing, large = spacing*10. */
+export type NudgeScale = 'fine' | 'normal' | 'large'
 
 export interface Selection {
   pointIds: string[]
@@ -93,8 +95,8 @@ export interface EditorState {
   selectMany: (kind: SelectableKind, ids: string[]) => void
   toggleSelect: (kind: SelectableKind, id: string) => void
   deleteSelection: () => void
-  /** Move the current selection by one (or 10x) grid step along a unit direction. */
-  nudgeSelection: (dirX: number, dirZ: number, large: boolean) => void
+  /** Move the current selection along a unit direction by a grid step scaled by `scale`. */
+  nudgeSelection: (dirX: number, dirZ: number, scale: NudgeScale) => void
   /** Translate the current selection by an arbitrary world delta (mouse-drag commit). */
   translateSelectionBy: (dx: number, dz: number) => void
 
@@ -289,11 +291,12 @@ export const useEditorStore = create<EditorState>()(
     get().clearSelection()
   },
 
-  nudgeSelection: (dirX, dirZ, large) => {
+  nudgeSelection: (dirX, dirZ, scale) => {
     const movePts = collectSelectionPointIds(get())
     if (movePts.size === 0) return
     const spacing = useSettingsStore.getState().grid.spacing
-    const step = spacing * (large ? 10 : 1)
+    // `/ 10` for fine (not `* 0.1`) keeps round spacings free of float noise.
+    const step = scale === 'large' ? spacing * 10 : scale === 'fine' ? spacing / 10 : spacing
     const dx = dirX * step
     const dz = dirZ * step
     set((st) => ({ points: translatePoints(st.points, movePts, dx, dz) }))
