@@ -81,4 +81,60 @@ describe('validateDocument', () => {
     }
     expect(validateDocument(doc).some((i) => /cross/.test(i.message))).toBe(true)
   })
+
+  const overlapErrors = (doc: PolyDocument) =>
+    validateDocument(doc).filter((i) => i.level === 'error' && /overlap/.test(i.message))
+
+  test('flags two points sharing coordinates as an error', () => {
+    const doc: PolyDocument = {
+      points: [
+        { id: 'a', x: 0, z: 0 },
+        { id: 'b', x: 0, z: 0 },
+      ],
+      lines: [],
+      faceTypes: {},
+    }
+    expect(overlapErrors(doc)).toHaveLength(1)
+  })
+
+  test('a box with all-distinct points has no overlap error', () => {
+    expect(overlapErrors(box())).toEqual([])
+  })
+
+  test('coincidence follows the coordKey cell, matching addPoint dedup', () => {
+    // Same 1mm cell -> flagged.
+    const same: PolyDocument = {
+      points: [
+        { id: 'a', x: 0, z: 0 },
+        { id: 'b', x: 0.0004, z: 0 }, // rounds into the same cell as (0, 0)
+      ],
+      lines: [],
+      faceTypes: {},
+    }
+    expect(overlapErrors(same)).toHaveLength(1)
+    // Adjacent cell (1mm apart) -> not flagged.
+    const apart: PolyDocument = {
+      points: [
+        { id: 'a', x: 0, z: 0 },
+        { id: 'b', x: 0.001, z: 0 },
+      ],
+      lines: [],
+      faceTypes: {},
+    }
+    expect(overlapErrors(apart)).toEqual([])
+  })
+
+  test('reports the duplicate and location counts for a triple coincidence', () => {
+    const doc: PolyDocument = {
+      points: [
+        { id: 'a', x: 5, z: -5 },
+        { id: 'b', x: 5, z: -5 },
+        { id: 'c', x: 5, z: -5 },
+      ],
+      lines: [],
+      faceTypes: {},
+    }
+    const [err] = overlapErrors(doc)
+    expect(err.message).toMatch(/2 point\(s\) overlap another at 1 location\(s\)/)
+  })
 })

@@ -1,7 +1,7 @@
 import type { PolyDocument } from '../types'
 import { isSingleBitFlag } from './boundary'
 import { detectFaces } from './faces'
-import type { Vec2 } from '../lib/geometry'
+import { coordKey, type Vec2 } from '../lib/geometry'
 
 export interface ValidationIssue {
   level: 'error' | 'warning'
@@ -35,6 +35,28 @@ export function validateDocument(doc: PolyDocument): ValidationIssue[] {
   if (doc.points.length === 0) issues.push({ level: 'warning', message: 'No points defined.' })
   if (doc.lines.length === 0)
     issues.push({ level: 'warning', message: 'No segments defined.' })
+
+  // Coincident points (same coordKey tolerance addPoint dedupes by) are degenerate
+  // nodes for DES3D. The move paths (drag/nudge) don't dedupe, so guard at export.
+  const countByKey = new Map<string, number>()
+  for (const p of doc.points) {
+    const k = coordKey(p.x, p.z)
+    countByKey.set(k, (countByKey.get(k) ?? 0) + 1)
+  }
+  let dupLocations = 0
+  let dupExtras = 0
+  for (const n of countByKey.values()) {
+    if (n > 1) {
+      dupLocations++
+      dupExtras += n - 1
+    }
+  }
+  if (dupLocations > 0) {
+    issues.push({
+      level: 'error',
+      message: `${dupExtras} point(s) overlap another at ${dupLocations} location(s). Move or delete the duplicates so each node is unique.`,
+    })
+  }
 
   // Boundary flags must be a single bit; endpoints must be valid; no self-loops.
   for (const s of doc.lines) {
