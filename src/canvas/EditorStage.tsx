@@ -166,6 +166,9 @@ export function EditorStage() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return
+      // Ignore keys while a mouse move-drag is in progress so keyboard actions
+      // (nudge, delete, undo, Escape) can't mutate the selection mid-gesture.
+      if (dragStart.current) return
       // Hold Space to temporarily pan from any tool (standard editor convention).
       if (e.code === 'Space') {
         e.preventDefault()
