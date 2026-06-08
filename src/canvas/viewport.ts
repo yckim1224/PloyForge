@@ -42,6 +42,24 @@ export function panBy(v: Viewport, dxPx: number, dyPx: number): Viewport {
   return { ...v, originX: v.originX + dxPx, originY: v.originY + dyPx }
 }
 
+/**
+ * Screen-pixel pan delta for an arrow key, where `(dirX, dirZ)` is the world
+ * unit direction of the arrow (right = +x, up = +z). The arrow moves the camera
+ * in that direction, so on-screen content shifts the opposite way on x and,
+ * because screen y is inverted from world z, the same way as `dirZ` on y.
+ */
+export function arrowPanDelta(
+  dirX: number,
+  dirZ: number,
+  stepPx: number,
+): { dxPx: number; dyPx: number } {
+  // `=== 0 ? 0` avoids returning a negative zero for the unused axis.
+  return {
+    dxPx: dirX === 0 ? 0 : -dirX * stepPx,
+    dyPx: dirZ === 0 ? 0 : dirZ * stepPx,
+  }
+}
+
 /** Zoom by `factor` keeping the world point under (sx, sy) fixed on screen. */
 export function zoomAt(v: Viewport, factor: number, sx: number, sy: number): Viewport {
   const w = screenToWorld(v, sx, sy)

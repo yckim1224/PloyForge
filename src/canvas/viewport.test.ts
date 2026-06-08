@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { fitPoints, screenToWorld, worldToScreen, zoomAt } from './viewport'
+import { arrowPanDelta, fitPoints, screenToWorld, worldToScreen, zoomAt } from './viewport'
 import { computeGridLines } from './grid'
 import type { Point } from '../types'
 
@@ -75,5 +75,20 @@ describe('computeGridLines', () => {
     const v = { scale: 1e-7, originX: 0, originY: 0 }
     const lines = computeGridLines(v, 800, 600, 1, 500)
     expect(lines.length).toBe(0)
+  })
+})
+
+describe('arrowPanDelta', () => {
+  test('moves the camera in the arrow direction', () => {
+    // Right: camera right -> content shifts left (negative x delta).
+    expect(arrowPanDelta(1, 0, 40)).toEqual({ dxPx: -40, dyPx: 0 })
+    expect(arrowPanDelta(-1, 0, 40)).toEqual({ dxPx: 40, dyPx: 0 })
+    // Up (dirZ=+1): content shifts down on screen (positive y delta), revealing higher content.
+    expect(arrowPanDelta(0, 1, 40)).toEqual({ dxPx: 0, dyPx: 40 })
+    expect(arrowPanDelta(0, -1, 40)).toEqual({ dxPx: 0, dyPx: -40 })
+  })
+
+  test('scales with the step size', () => {
+    expect(arrowPanDelta(1, 0, 200)).toEqual({ dxPx: -200, dyPx: 0 })
   })
 })

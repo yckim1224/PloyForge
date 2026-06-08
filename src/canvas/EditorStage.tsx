@@ -14,6 +14,7 @@ import { HelpContent } from './HelpContent'
 import { Crosshair, HelpCircle } from 'lucide-react'
 import { computeGridLines } from './grid'
 import {
+  arrowPanDelta,
   fitPoints,
   panBy,
   screenToWorld,
@@ -33,6 +34,9 @@ import { exceededDragThreshold, isDraggableTarget, snapDelta } from './drag'
 
 const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
+/** Per-keypress view pan step (px) for arrow keys when nothing is selected. */
+const ARROW_PAN_PX = 40
+const ARROW_PAN_LARGE_PX = 200
 
 function StageActions({ onFit }: { onFit: () => void }) {
   return (
@@ -219,6 +223,19 @@ export function EditorStage() {
         setVp((v) => zoomAt(v, 1 / 1.1, w / 2, h / 2))
         return
       }
+      // Arrows nudge the selection, or pan the view when nothing is selected
+      // (the arrow moves the camera in that direction). Shift = larger step.
+      const arrowMove = (dirX: number, dirZ: number, large: boolean) => {
+        const sel = useEditorStore.getState().selection
+        const hasSelection =
+          sel.pointIds.length > 0 || sel.lineIds.length > 0 || sel.faceIds.length > 0
+        if (hasSelection) {
+          nudgeSelection(dirX, dirZ, large)
+          return
+        }
+        const { dxPx, dyPx } = arrowPanDelta(dirX, dirZ, large ? ARROW_PAN_LARGE_PX : ARROW_PAN_PX)
+        setVp((v) => panBy(v, dxPx, dyPx))
+      }
       switch (e.key) {
         case 'Delete':
         case 'Backspace':
@@ -251,19 +268,19 @@ export function EditorStage() {
           break
         case 'ArrowRight':
           e.preventDefault()
-          nudgeSelection(1, 0, e.shiftKey)
+          arrowMove(1, 0, e.shiftKey)
           break
         case 'ArrowLeft':
           e.preventDefault()
-          nudgeSelection(-1, 0, e.shiftKey)
+          arrowMove(-1, 0, e.shiftKey)
           break
         case 'ArrowUp':
           e.preventDefault()
-          nudgeSelection(0, 1, e.shiftKey)
+          arrowMove(0, 1, e.shiftKey)
           break
         case 'ArrowDown':
           e.preventDefault()
-          nudgeSelection(0, -1, e.shiftKey)
+          arrowMove(0, -1, e.shiftKey)
           break
         default:
           return
