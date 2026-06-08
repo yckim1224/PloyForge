@@ -186,6 +186,39 @@ export function EditorStage() {
         redoEdit()
         return
       }
+      // Select all of the current marquee target kind (selection is single-kind).
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault()
+        const st = useEditorStore.getState()
+        const kind = st.marqueeTarget
+        const ids =
+          kind === 'point'
+            ? st.points.map((p) => p.id)
+            : kind === 'line'
+              ? st.lines.map((l) => l.id)
+              : st.faces.map((f) => f.id)
+        st.selectMany(kind, ids)
+        return
+      }
+      // Save shortcut routes to the Actions panel's Export (see requestExport).
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault()
+        useEditorStore.getState().requestExport()
+        return
+      }
+      // Keyboard zoom about the view center; Ctrl/Cmd +/- stays browser zoom.
+      if (!e.ctrlKey && !e.metaKey && (e.key === '+' || e.key === '=')) {
+        e.preventDefault()
+        const { w, h } = sizeRef.current
+        setVp((v) => zoomAt(v, 1.1, w / 2, h / 2))
+        return
+      }
+      if (!e.ctrlKey && !e.metaKey && (e.key === '-' || e.key === '_')) {
+        e.preventDefault()
+        const { w, h } = sizeRef.current
+        setVp((v) => zoomAt(v, 1 / 1.1, w / 2, h / 2))
+        return
+      }
       switch (e.key) {
         case 'Delete':
         case 'Backspace':
@@ -210,6 +243,11 @@ export function EditorStage() {
         case 'h':
         case 'H':
           setTool('pan')
+          break
+        case 'f':
+        case 'F':
+          if (e.metaKey || e.ctrlKey) return // leave Cmd/Ctrl+F to the browser
+          useEditorStore.getState().requestFit()
           break
         case 'ArrowRight':
           e.preventDefault()

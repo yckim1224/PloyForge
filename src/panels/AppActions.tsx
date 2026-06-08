@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@heroui/react'
 import {
   CircleCheck,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useEditorStore } from '../store/editorStore'
 import { useImportStore } from '../store/importStore'
+import { toast } from '../store/toastStore'
 import { serializePoly } from '../poly/serialize'
 import { validateDocument, type ValidationIssue } from '../poly/validate'
 import { ConfirmModal } from '../components/ConfirmModal'
@@ -46,6 +47,9 @@ export function AppActions() {
     if (errors.length > 0) {
       setIssues(found)
       setExportWarning(`Fix ${errors.length} error(s) before exporting.`)
+      // Surface a toast too: the keyboard Save shortcut may run with the Actions
+      // panel collapsed, where the inline message would be hidden.
+      toast.error(`Fix ${errors.length} error(s) before exporting.`)
       return
     }
     setIssues(found.length > 0 ? found : null)
@@ -65,6 +69,21 @@ export function AppActions() {
     a.click()
     URL.revokeObjectURL(url)
   }
+
+  // The keyboard Save shortcut (Cmd/Ctrl+S) bumps exportNonce; run the same
+  // export path. Keep the latest onExport in a ref (updated in an effect, not
+  // during render) and subscribe to exportNonce changes just once.
+  const onExportRef = useRef(onExport)
+  useEffect(() => {
+    onExportRef.current = onExport
+  })
+  useEffect(
+    () =>
+      useEditorStore.subscribe((s, prev) => {
+        if (s.exportNonce !== prev.exportNonce) onExportRef.current()
+      }),
+    [],
+  )
 
   const onValidate = () => {
     setIssues(validateDocument(toDocument()))

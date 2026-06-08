@@ -11,6 +11,12 @@ beforeEach(() => {
 })
 
 describe('editorStore', () => {
+  test('requestExport bumps exportNonce', () => {
+    const before = store().exportNonce
+    store().requestExport()
+    expect(store().exportNonce).toBe(before + 1)
+  })
+
   test('hasGeometry reflects whether any point or line exists', () => {
     expect(hasGeometry(store())).toBe(false)
     const a = store().addPoint(0, 0)

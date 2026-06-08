@@ -74,9 +74,13 @@ export interface EditorState {
   pendingLineStart: string | null
   /** Bumped to ask the canvas to fit the view to the current points. */
   fitNonce: number
+  /** Bumped to ask the Actions panel to run an Export (keyboard Cmd/Ctrl+S). */
+  exportNonce: number
 
   // View & tools
   requestFit: () => void
+  /** Trigger an Export from outside the Actions panel (keyboard shortcut). */
+  requestExport: () => void
   setTool: (tool: Tool) => void
   setMarqueeTarget: (t: MarqueeTarget) => void
   setPendingLineStart: (id: string | null) => void
@@ -221,8 +225,10 @@ export const useEditorStore = create<EditorState>()(
   marqueeTarget: 'point',
   pendingLineStart: null,
   fitNonce: 0,
+  exportNonce: 0,
 
   requestFit: () => set((s) => ({ fitNonce: s.fitNonce + 1 })),
+  requestExport: () => set((s) => ({ exportNonce: s.exportNonce + 1 })),
   setTool: (tool) =>
     set((s) => ({ tool, pendingLineStart: tool === 'line' ? s.pendingLineStart : null })),
   setMarqueeTarget: (t) => set({ marqueeTarget: t }),
