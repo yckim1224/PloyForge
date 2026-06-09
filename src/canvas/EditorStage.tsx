@@ -47,7 +47,7 @@ const ARROW_PAN_FINE_PX = 8
 
 function StageActions({ onFit }: { onFit: () => void }) {
   return (
-    <div className="absolute right-3 top-3 z-10 flex gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur">
+    <div className="flex flex-col gap-1 rounded-lg border border-neutral-200 bg-white/95 p-1 shadow-sm backdrop-blur">
       <Tooltip content={<HelpContent />} placement="bottom">
         <button
           type="button"
@@ -603,10 +603,10 @@ export function EditorStage() {
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-neutral-100">
       <div className="absolute left-3 top-3 z-10 flex flex-col items-start gap-2">
+        <StageActions onFit={requestFit} />
         <Toolbar />
         <LayerOverlay />
       </div>
-      <StageActions onFit={requestFit} />
       <div
         ref={hudRef}
         className="pointer-events-none absolute bottom-2 left-2 z-10 rounded-md border border-neutral-200 bg-white/85 px-2 py-1 font-mono text-xs tabular-nums text-neutral-600 shadow-sm"

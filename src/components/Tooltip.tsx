@@ -74,11 +74,16 @@ export function Tooltip({ content, children, placement = 'bottom', delay = 250 }
       const tw = tip.offsetWidth
       const th = tip.offsetHeight
       const gap = 8
-      if (placement === 'left') {
-        setPos({ top: tr.top + tr.height / 2 - th / 2, left: tr.left - tw - gap })
-      } else {
-        setPos({ top: tr.bottom + gap, left: tr.left + tr.width / 2 - tw / 2 })
-      }
+      const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi))
+      const rawTop =
+        placement === 'left' ? tr.top + tr.height / 2 - th / 2 : tr.bottom + gap
+      const rawLeft =
+        placement === 'left' ? tr.left - tw - gap : tr.left + tr.width / 2 - tw / 2
+      // Keep the tooltip inside the viewport so it never clings to an edge.
+      setPos({
+        top: clamp(rawTop, gap, window.innerHeight - th - gap),
+        left: clamp(rawLeft, gap, window.innerWidth - tw - gap),
+      })
     }
     place()
     window.addEventListener('resize', place)

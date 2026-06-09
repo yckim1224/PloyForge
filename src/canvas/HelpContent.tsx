@@ -2,8 +2,10 @@ import type { ReactNode } from 'react'
 
 const isMac =
   typeof navigator !== 'undefined' && /Mac|iPad|iPhone/i.test(navigator.userAgent)
-const MOD = isMac ? '⌘' : 'Ctrl' // ⌘
-const SHIFT_MOD = isMac ? '⇧⌘' : 'Ctrl+⇧' // ⇧⌘
+const MOD = isMac ? '⌘' : 'Ctrl'
+const SHIFT_MOD = isMac ? '⇧⌘' : 'Ctrl+⇧'
+const ALT = isMac ? '⌥' : 'Alt'
+const ARROWS = '← ↑ → ↓'
 
 interface Shortcut {
   keys: string[]
@@ -22,7 +24,16 @@ const SECTIONS: Section[] = [
       { keys: ['V'], label: 'Select' },
       { keys: ['P'], label: 'Add point' },
       { keys: ['L'], label: 'Add line' },
-      { keys: ['H'], label: 'Pan' },
+      { keys: ['H'], label: 'Pan tool' },
+    ],
+  },
+  {
+    title: 'Select',
+    rows: [
+      { keys: ['Click'], label: 'Select' },
+      { keys: ['⇧', 'Click'], label: `Add / remove (or ${MOD})` },
+      { keys: ['Drag'], label: `Marquee — ⇧ lines, ${MOD} faces` },
+      { keys: [MOD, 'A'], label: 'Select all' },
     ],
   },
   {
@@ -32,21 +43,30 @@ const SECTIONS: Section[] = [
       { keys: ['Esc'], label: 'Cancel / Deselect' },
       { keys: [MOD, 'Z'], label: 'Undo' },
       { keys: [SHIFT_MOD, 'Z'], label: 'Redo' },
+      { keys: [ARROWS], label: 'Nudge ×1' },
+      { keys: ['⇧', ARROWS], label: 'Nudge ×10' },
+      { keys: [ALT, ARROWS], label: 'Nudge ×0.1 (fine)' },
+      { keys: ['Drag'], label: `Move selection (${ALT} free)` },
     ],
   },
   {
-    title: 'Navigate',
+    title: 'View',
     rows: [
-      { keys: ['Space'], label: 'Pan (hold)' },
-      { keys: ['← ↑ → ↓'], label: 'Nudge ×1' },
-      { keys: ['⇧', '← ↑ → ↓'], label: 'Nudge ×10' },
+      { keys: ['Wheel'], label: 'Zoom at cursor' },
+      { keys: ['+', '−'], label: 'Zoom in / out' },
+      { keys: ['F'], label: 'Fit view' },
+      { keys: ['Space', 'Drag'], label: 'Pan (hold)' },
+      { keys: ['Mid-drag'], label: 'Pan' },
+      { keys: [ARROWS], label: 'Pan (nothing selected)' },
     ],
   },
   {
-    title: 'Snap',
-    rows: [
-      { keys: ['Alt'], label: 'Bypass snap (free placement)' },
-    ],
+    title: 'File',
+    rows: [{ keys: [MOD, 'S'], label: 'Export .poly' }],
+  },
+  {
+    title: 'Modifiers',
+    rows: [{ keys: [ALT], label: 'Bypass snap · free move · fine step' }],
   },
 ]
 
@@ -75,7 +95,7 @@ function KeyCombo({ keys }: { keys: string[] }) {
  */
 export function HelpContent() {
   return (
-    <div className="flex flex-col gap-3 px-1 py-0.5 text-xs">
+    <div className="flex w-72 flex-col gap-3 px-1 py-0.5 text-xs">
       {SECTIONS.map((sec) => (
         <section key={sec.title} className="flex flex-col gap-1">
           <h4 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-white/55">
