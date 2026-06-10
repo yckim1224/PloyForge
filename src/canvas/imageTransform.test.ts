@@ -52,7 +52,14 @@ describe('snapResizeToGrid (uniform / locked path)', () => {
     const out = snapResizeToGrid(prev, raw, 'bottom-right', 10)!
     expect(out.x).toBe(0)
     expect(out.z).toBe(0)
-    expect(out.scale).toBeCloseTo(1.1) // BR.x 107 -> 110, scale 110/100
+    expect(out.scale).toBeCloseTo(1.1) // BR.x 107 -> 110 (3 away) vs z -53.5 -> -50 (3.5 away)
+  })
+
+  test('snaps whichever axis is nearest a grid line (keep-ratio)', () => {
+    // BR corner (106, -53): x is 4 from its grid line (110), z is 3 from -50 -> snap z.
+    const raw: BgRect = { x: 0, z: 0, scaleX: 1.06, scaleZ: 1.06, naturalWidth: 100, naturalHeight: 50 }
+    const out = snapResizeToGrid(prev, raw, 'bottom-right', 10)!
+    expect(out.scale).toBeCloseTo(1.0) // z -53 -> -50, scale 50/50
   })
 
   test('dragging top-left snaps while keeping the bottom-right corner fixed', () => {

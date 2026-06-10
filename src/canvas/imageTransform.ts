@@ -90,13 +90,16 @@ export function snapResizeToGrid(
   const fixedWhich = OPPOSITE[dragged]
   const fixed = corner(prev, fixedWhich)
   const dragRaw = corner(raw, dragged)
-  const dragPrev = corner(prev, dragged)
-  // Snap the axis the dragged corner moved along most; the ratio fixes the other.
+  // Snap whichever axis the dragged corner is nearest to a grid line on, so a
+  // keep-ratio resize sticks to the closer of the vertical / horizontal grid
+  // lines (the ratio then fixes the other axis).
+  const snapX = snap(dragRaw.x, spacing)
+  const snapZ = snap(dragRaw.z, spacing)
   let scale: number
-  if (Math.abs(dragRaw.x - dragPrev.x) >= Math.abs(dragRaw.z - dragPrev.z)) {
-    scale = Math.abs(snap(dragRaw.x, spacing) - fixed.x) / raw.naturalWidth
+  if (Math.abs(snapX - dragRaw.x) <= Math.abs(snapZ - dragRaw.z)) {
+    scale = Math.abs(snapX - fixed.x) / raw.naturalWidth
   } else {
-    scale = Math.abs(snap(dragRaw.z, spacing) - fixed.z) / raw.naturalHeight
+    scale = Math.abs(snapZ - fixed.z) / raw.naturalHeight
   }
   if (!(scale > 0)) return null
   const w = raw.naturalWidth * scale
