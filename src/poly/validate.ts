@@ -58,7 +58,10 @@ export function validateDocument(doc: PolyDocument): ValidationIssue[] {
     })
   }
 
-  // Boundary flags must be a single bit; endpoints must be valid; no self-loops.
+  // Boundary flags must be a single bit; no self-loops. Dangling endpoints (a
+  // segment referencing a missing point) are dropped by serialize on export, so
+  // they warn rather than block -- the output stays valid either way.
+  let dangling = 0
   for (const s of doc.lines) {
     if (!isSingleBitFlag(s.bdryFlag)) {
       issues.push({
@@ -67,10 +70,16 @@ export function validateDocument(doc: PolyDocument): ValidationIssue[] {
       })
     }
     if (!byId.has(s.p0) || !byId.has(s.p1)) {
-      issues.push({ level: 'error', message: 'A segment references a missing point.' })
+      dangling++
     } else if (s.p0 === s.p1) {
       issues.push({ level: 'error', message: 'A segment is a self-loop.' })
     }
+  }
+  if (dangling > 0) {
+    issues.push({
+      level: 'warning',
+      message: `${dangling} segment(s) reference a missing point (shown as "—" in the Lines list) and are dropped on export. Delete them to clean up.`,
+    })
   }
 
   // DES3D fatally rejects nregions <= 0; serialize emits one region per detected

@@ -59,6 +59,26 @@ describe('validateDocument', () => {
     expect(issues.some((i) => i.level === 'error' && /single-bit/.test(i.message))).toBe(true)
   })
 
+  test('warns (not errors) on a segment with a dangling endpoint', () => {
+    const doc = box()
+    doc.lines.push({ id: 'sx', p0: 'a', p1: 'missing', bdryFlag: 0 })
+    const issues = validateDocument(doc)
+    expect(issues.some((i) => i.level === 'warning' && /missing point/.test(i.message))).toBe(true)
+    // Downgraded from error: serialize drops it, so it must not block export.
+    expect(issues.some((i) => i.level === 'error' && /missing point/.test(i.message))).toBe(false)
+  })
+
+  test('aggregates the dangling-segment count into one warning', () => {
+    const doc = box()
+    doc.lines.push({ id: 'sx', p0: 'a', p1: 'mx', bdryFlag: 0 })
+    doc.lines.push({ id: 'sy', p0: 'my', p1: 'b', bdryFlag: 0 })
+    const warnings = validateDocument(doc).filter(
+      (i) => i.level === 'warning' && /missing point/.test(i.message),
+    )
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].message).toMatch(/2 segment\(s\)/)
+  })
+
   test('a closed box (with a detectable face) has no errors', () => {
     const doc = box()
     const issues = validateDocument(doc)
