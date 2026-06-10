@@ -96,23 +96,18 @@ export function LayerOverlay() {
         )
       })}
       {background && (
-        <>
-          <div className="my-0.5 h-px bg-neutral-200" />
-          <button
-            type="button"
-            title={`Toggle background image (${backgroundVisible ? 'on' : 'off'})`}
-            aria-label="Toggle background image"
-            aria-pressed={backgroundVisible}
-            onClick={() => setBackgroundVisible(!backgroundVisible)}
-            className={`flex size-9 items-center justify-center rounded-md transition-colors ${
-              backgroundVisible
-                ? 'bg-violet-600 text-white'
-                : 'text-neutral-400 hover:bg-neutral-100'
-            }`}
-          >
-            <ImageIcon className="size-4" />
-          </button>
-        </>
+        <button
+          type="button"
+          title={`Toggle background image (${backgroundVisible ? 'on' : 'off'})`}
+          aria-label="Toggle background image"
+          aria-pressed={backgroundVisible}
+          onClick={() => setBackgroundVisible(!backgroundVisible)}
+          className={`flex size-9 items-center justify-center rounded-md transition-colors ${
+            backgroundVisible ? 'bg-violet-600 text-white' : 'text-neutral-400 hover:bg-neutral-100'
+          }`}
+        >
+          <ImageIcon className="size-4" />
+        </button>
       )}
     </div>
   )
