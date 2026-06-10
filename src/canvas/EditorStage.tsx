@@ -38,7 +38,7 @@ import {
   type ScreenRect,
 } from './selection'
 import { exceededDragThreshold, isDraggableTarget, snapDelta } from './drag'
-import { nodeRectToWorld, resolveResize } from './imageTransform'
+import { asCornerAnchor, nodeRectToWorld, resolveResize, snapResizeToGrid } from './imageTransform'
 
 const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
@@ -1026,9 +1026,13 @@ export function EditorStage() {
                       ]
                 }
                 anchorDragBoundFunc={(_oldPos, newPos) => {
-                  // Live grid snap for resize handles, mirroring the move
-                  // dragBoundFunc so resizing visibly sticks to the grid; Alt frees it.
-                  if (altDownRef.current || !(gridSettings.spacing > 0)) return newPos
+                  // Live grid snap for resize handles, mirroring the move dragBoundFunc.
+                  // Only when unlocked: with aspect locked, Konva's keepRatio re-projects
+                  // the corner onto the original diagonal and would pull it off any snapped
+                  // anchor, so locked snaps in boundBoxFunc instead. Alt frees it.
+                  if (backgroundLockAspect || altDownRef.current || !(gridSettings.spacing > 0)) {
+                    return newPos
+                  }
                   const w = screenToWorld(vp, newPos.x, newPos.y)
                   const s = worldToScreen(
                     vp,
@@ -1037,9 +1041,57 @@ export function EditorStage() {
                   )
                   return { x: s.sx, y: s.sy }
                 }}
-                boundBoxFunc={(oldBox, newBox) =>
-                  newBox.width < 8 || newBox.height < 8 ? oldBox : newBox
-                }
+                boundBoxFunc={(oldBox, newBox) => {
+                  if (newBox.width < 8 || newBox.height < 8) return oldBox
+                  // Locked: snap the uniform resize to the grid here, because keepRatio
+                  // defeats anchorDragBoundFunc. Convert the box to world, reuse the
+                  // (tested) uniform snap, and convert back. boundBoxFunc runs after
+                  // keepRatio, so the snapped box is final. Unlocked already snapped live.
+                  const a = asCornerAnchor(bgActiveAnchorRef.current)
+                  if (
+                    !backgroundLockAspect ||
+                    altDownRef.current ||
+                    !(gridSettings.spacing > 0) ||
+                    !background ||
+                    !a
+                  ) {
+                    return newBox
+                  }
+                  const tl = screenToWorld(vp, newBox.x, newBox.y)
+                  const right = screenToWorld(vp, newBox.x + newBox.width, newBox.y).x
+                  const bottom = screenToWorld(vp, newBox.x, newBox.y + newBox.height).z
+                  const dims = {
+                    naturalWidth: background.naturalWidth,
+                    naturalHeight: background.naturalHeight,
+                  }
+                  const snapped = snapResizeToGrid(
+                    {
+                      x: background.x,
+                      z: background.z,
+                      scaleX: background.scaleX,
+                      scaleZ: background.scaleZ,
+                      ...dims,
+                    },
+                    {
+                      x: tl.x,
+                      z: tl.z,
+                      scaleX: (right - tl.x) / dims.naturalWidth,
+                      scaleZ: (tl.z - bottom) / dims.naturalHeight,
+                      ...dims,
+                    },
+                    a,
+                    gridSettings.spacing,
+                  )
+                  if (!snapped) return newBox
+                  const s = worldToScreen(vp, snapped.x, snapped.z)
+                  return {
+                    x: s.sx,
+                    y: s.sy,
+                    width: dims.naturalWidth * snapped.scale * vp.scale,
+                    height: dims.naturalHeight * snapped.scale * vp.scale,
+                    rotation: 0,
+                  }
+                }}
               />
             </Layer>
           )}
