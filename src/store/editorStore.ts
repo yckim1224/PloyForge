@@ -203,6 +203,10 @@ function lineExists(lines: Line[], a: string, b: string): boolean {
   )
 }
 
+function pointExists(points: Point[], id: string): boolean {
+  return points.some((p) => p.id === id)
+}
+
 /**
  * Every point id referenced by the current selection: selected points directly,
  * both endpoints of selected lines, and every vertex of selected faces. Faces are
@@ -380,6 +384,10 @@ export const useEditorStore = create<EditorState>()(
 
   addLine: (p0, p1, bdryFlag = 0) => {
     if (p0 === p1) return null
+    // Reject endpoints that no longer exist; otherwise a stale id (e.g. a
+    // pending line start left over after an Undo) would create a dangling line.
+    const pts = get().points
+    if (!pointExists(pts, p0) || !pointExists(pts, p1)) return null
     if (lineExists(get().lines, p0, p1)) return null
     const id = uid('s')
     set((s) => ({ lines: [...s.lines, { id, p0, p1, bdryFlag }] }))
@@ -391,6 +399,8 @@ export const useEditorStore = create<EditorState>()(
 
   insertLine: (index, p0, p1, bdryFlag = 0) => {
     if (p0 === p1) return null
+    const pts = get().points
+    if (!pointExists(pts, p0) || !pointExists(pts, p1)) return null
     if (lineExists(get().lines, p0, p1)) return null
     const lines = get().lines
     const append = index === null || index >= lines.length
@@ -861,6 +871,10 @@ export function undoEdit() {
   useEditorStore.temporal.getState().undo()
   useEditorStore.getState().recomputeFaces()
   useEditorStore.getState().clearSelection()
+  // The in-progress line start is transient (not in the undo snapshot): undo can
+  // remove the point it referenced, so clear it or the next line click would
+  // build a line from a now-deleted point (a dangling endpoint).
+  useEditorStore.getState().setPendingLineStart(null)
 }
 
 /** Redo the last undone geometry change and refresh derived faces. */
@@ -868,4 +882,5 @@ export function redoEdit() {
   useEditorStore.temporal.getState().redo()
   useEditorStore.getState().recomputeFaces()
   useEditorStore.getState().clearSelection()
+  useEditorStore.getState().setPendingLineStart(null)
 }

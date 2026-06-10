@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { collectSelectionPointIds, hasGeometry, useEditorStore } from './editorStore'
+import {
+  collectSelectionPointIds,
+  hasGeometry,
+  redoEdit,
+  undoEdit,
+  useEditorStore,
+} from './editorStore'
 import { useSettingsStore, defaultSettings } from './settingsStore'
 import { serializePoly } from '../poly/serialize'
 
@@ -119,6 +125,29 @@ describe('editorStore', () => {
     store().setPendingLineStart(a)
     store().removePoints([a])
     expect(store().pendingLineStart).toBeNull()
+  })
+
+  test('undo/redo clear the pending line start (no dangling endpoints)', () => {
+    useEditorStore.temporal.getState().clear()
+    const a = store().addPoint(0, 0)
+    store().setPendingLineStart(a)
+    // Undo removes the point; the transient pending start must not survive it,
+    // or the next line click would build a line from a now-deleted point.
+    undoEdit()
+    expect(store().points.some((p) => p.id === a)).toBe(false)
+    expect(store().pendingLineStart).toBeNull()
+    // Redo likewise leaves no stale pending start.
+    store().setPendingLineStart('p_stale')
+    redoEdit()
+    expect(store().pendingLineStart).toBeNull()
+  })
+
+  test('addLine and insertLine reject non-existent endpoints', () => {
+    const a = store().addPoint(0, 0)
+    expect(store().addLine(a, 'p_missing')).toBeNull()
+    expect(store().addLine('p_missing', a)).toBeNull()
+    expect(store().insertLine(0, a, 'p_missing')).toBeNull()
+    expect(store().lines.length).toBe(0)
   })
 
   test('autoAssignBoundaryFlags derives left/right/bottom/top from the points bbox', () => {
