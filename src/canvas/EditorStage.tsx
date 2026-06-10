@@ -1025,6 +1025,18 @@ export function EditorStage() {
                         'bottom-right',
                       ]
                 }
+                anchorDragBoundFunc={(_oldPos, newPos) => {
+                  // Live grid snap for resize handles, mirroring the move
+                  // dragBoundFunc so resizing visibly sticks to the grid; Alt frees it.
+                  if (altDownRef.current || !(gridSettings.spacing > 0)) return newPos
+                  const w = screenToWorld(vp, newPos.x, newPos.y)
+                  const s = worldToScreen(
+                    vp,
+                    snap(w.x, gridSettings.spacing),
+                    snap(w.z, gridSettings.spacing),
+                  )
+                  return { x: s.sx, y: s.sy }
+                }}
                 boundBoxFunc={(oldBox, newBox) =>
                   newBox.width < 8 || newBox.height < 8 ? oldBox : newBox
                 }
