@@ -63,12 +63,14 @@ export function BackgroundSection() {
               onChange={(e) => useEditorStore.getState().setBackgroundSelected(e.target.checked)}
               className="size-3.5 shrink-0 accent-violet-600"
             />
-            <span
-              className="flex-1 truncate text-xs text-neutral-600 dark:text-neutral-300"
+            <button
+              type="button"
+              onClick={() => useEditorStore.getState().setBackgroundSelected(!selected)}
+              className="flex-1 truncate text-left text-xs text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
               title={background.fileName}
             >
               {background.fileName}
-            </span>
+            </button>
             <button
               type="button"
               aria-label="Remove background image"
