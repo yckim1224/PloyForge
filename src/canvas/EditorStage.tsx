@@ -13,7 +13,7 @@ import { useSettingsStore } from '../store/settingsStore'
 import { useLayerStore } from '../store/layerStore'
 import { toast } from '../store/toastStore'
 import { materialColor } from '../constants/materials'
-import { type Vec2 } from '../lib/geometry'
+import { snap, type Vec2 } from '../lib/geometry'
 import { Toolbar } from '../components/Toolbar'
 import { Tooltip } from '../components/Tooltip'
 import { LayerOverlay } from './LayerOverlay'
@@ -38,7 +38,7 @@ import {
   type ScreenRect,
 } from './selection'
 import { exceededDragThreshold, isDraggableTarget, snapDelta } from './drag'
-import { nodeRectToWorld } from './imageTransform'
+import { nodeRectToWorld, resolveResize } from './imageTransform'
 
 const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
@@ -140,6 +140,10 @@ export function EditorStage() {
   const bgTransformerRef = useRef<Konva.Transformer | null>(null)
   // Set when an image drag/resize just ended, so the trailing click is swallowed.
   const justImageDragged = useRef(false)
+  // Tracks Alt for grid-snap bypass (dragBoundFunc / Transformer carry no event).
+  const altDownRef = useRef(false)
+  // The corner anchor being dragged during a Transformer resize.
+  const bgActiveAnchorRef = useRef<string | null>(null)
 
   const points = useEditorStore((s) => s.points)
   const lines = useEditorStore((s) => s.lines)
@@ -406,6 +410,25 @@ export function EditorStage() {
     }
     tr.getLayer()?.batchDraw()
   }, [bgEditMode, background, vp])
+
+  // Track Alt globally so the grid-snap helpers (which run without an event) can
+  // honor the free-move modifier.
+  useEffect(() => {
+    const onAlt = (e: KeyboardEvent) => {
+      altDownRef.current = e.altKey
+    }
+    const onBlur = () => {
+      altDownRef.current = false
+    }
+    window.addEventListener('keydown', onAlt)
+    window.addEventListener('keyup', onAlt)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onAlt)
+      window.removeEventListener('keyup', onAlt)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [])
 
   // During a move drag, render the moved points (and the lines/faces that
   // reference them) offset by the live delta -- no store mutation until drop.
@@ -924,6 +947,17 @@ export function EditorStage() {
                 height={background.naturalHeight * background.scale * vp.scale}
                 opacity={background.opacity}
                 draggable
+                dragBoundFunc={(pos) => {
+                  // Snap the top-left to the grid while dragging; Alt frees it.
+                  if (altDownRef.current || !(gridSettings.spacing > 0)) return pos
+                  const w = screenToWorld(vp, pos.x, pos.y)
+                  const s = worldToScreen(
+                    vp,
+                    snap(w.x, gridSettings.spacing),
+                    snap(w.z, gridSettings.spacing),
+                  )
+                  return { x: s.sx, y: s.sy }
+                }}
                 onDragEnd={(e) => {
                   const { x, z } = nodeRectToWorld(
                     { x: e.target.x(), y: e.target.y(), scaleX: 1 },
@@ -933,9 +967,12 @@ export function EditorStage() {
                   justImageDragged.current = true
                   updateBackground({ x, z })
                 }}
+                onTransformStart={() => {
+                  bgActiveAnchorRef.current = bgTransformerRef.current?.getActiveAnchor() ?? null
+                }}
                 onTransformEnd={(e) => {
                   const node = e.target
-                  const res = nodeRectToWorld(
+                  const raw = nodeRectToWorld(
                     { x: node.x(), y: node.y(), scaleX: node.scaleX() },
                     vp,
                     background.scale,
@@ -945,7 +982,19 @@ export function EditorStage() {
                   node.scaleX(1)
                   node.scaleY(1)
                   justImageDragged.current = true
-                  updateBackground({ x: res.x, z: res.z, scale: res.scale })
+                  const dims = {
+                    naturalWidth: background.naturalWidth,
+                    naturalHeight: background.naturalHeight,
+                  }
+                  updateBackground(
+                    resolveResize(
+                      { x: background.x, z: background.z, scale: background.scale, ...dims },
+                      { x: raw.x, z: raw.z, scale: raw.scale, ...dims },
+                      bgActiveAnchorRef.current,
+                      gridSettings.spacing,
+                      altDownRef.current,
+                    ),
+                  )
                 }}
               />
               <Transformer
