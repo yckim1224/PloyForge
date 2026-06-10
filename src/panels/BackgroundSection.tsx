@@ -14,6 +14,7 @@ import { useEditorStore } from '../store/editorStore'
 export function BackgroundSection() {
   const background = useEditorStore((s) => s.background)
   const selected = useEditorStore((s) => s.backgroundSelected)
+  const lockAspect = useEditorStore((s) => s.backgroundLockAspect)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -94,9 +95,14 @@ export function BackgroundSection() {
               onCommit={(v) => useEditorStore.getState().updateBackground({ z: v })}
             />
             <NumberValue
-              label="Scale (m/px)"
-              value={background.scale}
-              onCommit={(v) => useEditorStore.getState().updateBackground({ scale: v })}
+              label="Scale X (m/px)"
+              value={background.scaleX}
+              onCommit={(v) => useEditorStore.getState().updateBackground({ scaleX: v })}
+            />
+            <NumberValue
+              label="Scale Z (m/px)"
+              value={background.scaleZ}
+              onCommit={(v) => useEditorStore.getState().updateBackground({ scaleZ: v })}
             />
             <NumberValue
               label="Opacity (0–1)"
@@ -105,6 +111,16 @@ export function BackgroundSection() {
               onCommit={(v) => useEditorStore.getState().updateBackground({ opacity: v })}
             />
           </div>
+
+          <label className="flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-200">
+            <input
+              type="checkbox"
+              checked={lockAspect}
+              onChange={(e) => useEditorStore.getState().setBackgroundLockAspect(e.target.checked)}
+              className="size-3.5 shrink-0 accent-violet-600"
+            />
+            Lock aspect ratio (resize)
+          </label>
         </div>
       )}
     </CollapsibleSection>

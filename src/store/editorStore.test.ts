@@ -681,12 +681,13 @@ describe('editorStore background image', () => {
       naturalHeight: 100,
     })
 
-  test('setBackgroundElement seeds defaults (0,0, scale 1000, opacity 0.5)', () => {
+  test('setBackgroundElement seeds defaults (0,0, scaleX/scaleZ 1000, opacity 0.5)', () => {
     addBg()
     expect(store().background).toMatchObject({
       x: 0,
       z: 0,
-      scale: 1000,
+      scaleX: 1000,
+      scaleZ: 1000,
       opacity: 0.5,
       fileName: 'fig.png',
       naturalWidth: 200,
@@ -694,13 +695,16 @@ describe('editorStore background image', () => {
     })
   })
 
-  test('updateBackground clamps opacity to 0..1 and rejects non-positive scale', () => {
+  test('updateBackground clamps opacity to 0..1 and rejects non-positive scales', () => {
     addBg()
-    store().updateBackground({ opacity: 1.5, scale: -3, x: 50 })
+    store().updateBackground({ opacity: 1.5, scaleX: -3, scaleZ: 0, x: 50 })
     const bg = store().background!
     expect(bg.opacity).toBe(1)
-    expect(bg.scale).toBe(1000) // -3 rejected, keeps prior scale
+    expect(bg.scaleX).toBe(1000) // -3 rejected, keeps prior scaleX
+    expect(bg.scaleZ).toBe(1000) // 0 rejected, keeps prior scaleZ
     expect(bg.x).toBe(50)
+    store().updateBackground({ scaleX: 500 }) // a valid value applies
+    expect(store().background!.scaleX).toBe(500)
     store().updateBackground({ opacity: -1 })
     expect(store().background!.opacity).toBe(0)
   })
@@ -735,6 +739,14 @@ describe('editorStore background image', () => {
     expect(store().backgroundVisible).toBe(false)
     store().setBackgroundVisible(true)
     expect(store().backgroundVisible).toBe(true)
+  })
+
+  test('backgroundLockAspect defaults true and toggles independently', () => {
+    expect(store().backgroundLockAspect).toBe(true)
+    store().setBackgroundLockAspect(false)
+    expect(store().backgroundLockAspect).toBe(false)
+    store().setBackgroundLockAspect(true)
+    expect(store().backgroundLockAspect).toBe(true)
   })
 
   test('removeBackground clears the image and its selection', () => {

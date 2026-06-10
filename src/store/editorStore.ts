@@ -69,6 +69,8 @@ export interface EditorState {
   backgroundSelected: boolean
   /** Whether the background image layer is shown (independent of selection). */
   backgroundVisible: boolean
+  /** Whether mouse resize keeps aspect ratio (false = stretch each axis freely). */
+  backgroundLockAspect: boolean
   selection: Selection
   tool: Tool
   /** Which element type a marquee (rubber-band) drag selects by default. */
@@ -163,11 +165,14 @@ export interface EditorState {
     meta: { objectUrl: string; fileName: string; naturalWidth: number; naturalHeight: number },
   ) => void
   loadBackgroundFromFile: (file: File) => void
-  updateBackground: (patch: Partial<Pick<BackgroundImage, 'x' | 'z' | 'scale' | 'opacity'>>) => void
+  updateBackground: (
+    patch: Partial<Pick<BackgroundImage, 'x' | 'z' | 'scaleX' | 'scaleZ' | 'opacity'>>,
+  ) => void
   nudgeBackground: (dirX: number, dirZ: number, scale: NudgeScale) => void
   removeBackground: () => void
   setBackgroundSelected: (selected: boolean) => void
   setBackgroundVisible: (visible: boolean) => void
+  setBackgroundLockAspect: (locked: boolean) => void
 
   // Selection
   setSelection: (sel: Partial<Selection>) => void
@@ -235,6 +240,7 @@ export const useEditorStore = create<EditorState>()(
   background: null,
   backgroundSelected: false,
   backgroundVisible: true,
+  backgroundLockAspect: true,
   selection: emptySelection(),
   tool: 'select',
   marqueeTarget: 'point',
@@ -658,7 +664,8 @@ export const useEditorStore = create<EditorState>()(
         naturalHeight: meta.naturalHeight,
         x: 0,
         z: 0,
-        scale: 1000,
+        scaleX: 1000,
+        scaleZ: 1000,
         opacity: 0.5,
       },
     })
@@ -691,7 +698,8 @@ export const useEditorStore = create<EditorState>()(
       const next = { ...s.background, ...patch }
       // Guard invalid values regardless of source (panel edit or mouse gesture).
       if (patch.opacity !== undefined) next.opacity = Math.min(1, Math.max(0, patch.opacity))
-      if (patch.scale !== undefined && !(patch.scale > 0)) next.scale = s.background.scale
+      if (patch.scaleX !== undefined && !(patch.scaleX > 0)) next.scaleX = s.background.scaleX
+      if (patch.scaleZ !== undefined && !(patch.scaleZ > 0)) next.scaleZ = s.background.scaleZ
       return { background: next }
     }),
 
@@ -722,6 +730,8 @@ export const useEditorStore = create<EditorState>()(
     ),
 
   setBackgroundVisible: (visible) => set({ backgroundVisible: visible }),
+
+  setBackgroundLockAspect: (locked) => set({ backgroundLockAspect: locked }),
 
   setSelection: (sel) => set((s) => ({ selection: { ...s.selection, ...sel } })),
 
@@ -775,6 +785,7 @@ export const useEditorStore = create<EditorState>()(
       background: null,
       backgroundSelected: false,
       backgroundVisible: true,
+      backgroundLockAspect: true,
     })
   },
     }),

@@ -96,7 +96,7 @@ function backgroundCorners(bg: BackgroundImage | null): { x: number; z: number }
   if (!bg) return []
   return [
     { x: bg.x, z: bg.z },
-    { x: bg.x + bg.naturalWidth * bg.scale, z: bg.z - bg.naturalHeight * bg.scale },
+    { x: bg.x + bg.naturalWidth * bg.scaleX, z: bg.z - bg.naturalHeight * bg.scaleZ },
   ]
 }
 
@@ -183,6 +183,7 @@ export function EditorStage() {
   const nudgeBackground = useEditorStore((s) => s.nudgeBackground)
   const removeBackground = useEditorStore((s) => s.removeBackground)
   const backgroundVisible = useEditorStore((s) => s.backgroundVisible)
+  const backgroundLockAspect = useEditorStore((s) => s.backgroundLockAspect)
   // Selected image with the select tool active -> lift to the top and make it
   // mouse-editable (drag to move, Transformer handles to resize).
   const bgEditMode =
@@ -738,8 +739,8 @@ export function EditorStage() {
                 image={background.img}
                 x={worldToScreen(vp, background.x, background.z).sx}
                 y={worldToScreen(vp, background.x, background.z).sy}
-                width={background.naturalWidth * background.scale * vp.scale}
-                height={background.naturalHeight * background.scale * vp.scale}
+                width={background.naturalWidth * background.scaleX * vp.scale}
+                height={background.naturalHeight * background.scaleZ * vp.scale}
                 opacity={background.opacity}
               />
             </Layer>
@@ -943,8 +944,8 @@ export function EditorStage() {
                 image={background.img}
                 x={worldToScreen(vp, background.x, background.z).sx}
                 y={worldToScreen(vp, background.x, background.z).sy}
-                width={background.naturalWidth * background.scale * vp.scale}
-                height={background.naturalHeight * background.scale * vp.scale}
+                width={background.naturalWidth * background.scaleX * vp.scale}
+                height={background.naturalHeight * background.scaleZ * vp.scale}
                 opacity={background.opacity}
                 draggable
                 dragBoundFunc={(pos) => {
@@ -960,9 +961,10 @@ export function EditorStage() {
                 }}
                 onDragEnd={(e) => {
                   const { x, z } = nodeRectToWorld(
-                    { x: e.target.x(), y: e.target.y(), scaleX: 1 },
+                    { x: e.target.x(), y: e.target.y(), scaleX: 1, scaleY: 1 },
                     vp,
-                    background.scale,
+                    background.scaleX,
+                    background.scaleZ,
                   )
                   justImageDragged.current = true
                   updateBackground({ x, z })
@@ -973,12 +975,13 @@ export function EditorStage() {
                 onTransformEnd={(e) => {
                   const node = e.target
                   const raw = nodeRectToWorld(
-                    { x: node.x(), y: node.y(), scaleX: node.scaleX() },
+                    { x: node.x(), y: node.y(), scaleX: node.scaleX(), scaleY: node.scaleY() },
                     vp,
-                    background.scale,
+                    background.scaleX,
+                    background.scaleZ,
                   )
                   // Reset the node scale: the derived render reproduces the new
-                  // size from `scale`, so leaving it on would double-apply.
+                  // size from scaleX/scaleZ, so leaving it on would double-apply.
                   node.scaleX(1)
                   node.scaleY(1)
                   justImageDragged.current = true
@@ -988,11 +991,18 @@ export function EditorStage() {
                   }
                   updateBackground(
                     resolveResize(
-                      { x: background.x, z: background.z, scale: background.scale, ...dims },
-                      { x: raw.x, z: raw.z, scale: raw.scale, ...dims },
+                      {
+                        x: background.x,
+                        z: background.z,
+                        scaleX: background.scaleX,
+                        scaleZ: background.scaleZ,
+                        ...dims,
+                      },
+                      { x: raw.x, z: raw.z, scaleX: raw.scaleX, scaleZ: raw.scaleZ, ...dims },
                       bgActiveAnchorRef.current,
                       gridSettings.spacing,
                       altDownRef.current,
+                      backgroundLockAspect,
                     ),
                   )
                 }}
@@ -1000,8 +1010,21 @@ export function EditorStage() {
               <Transformer
                 ref={bgTransformerRef}
                 rotateEnabled={false}
-                keepRatio
-                enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
+                keepRatio={backgroundLockAspect}
+                enabledAnchors={
+                  backgroundLockAspect
+                    ? ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+                    : [
+                        'top-left',
+                        'top-center',
+                        'top-right',
+                        'middle-left',
+                        'middle-right',
+                        'bottom-left',
+                        'bottom-center',
+                        'bottom-right',
+                      ]
+                }
                 boundBoxFunc={(oldBox, newBox) =>
                   newBox.width < 8 || newBox.height < 8 ? oldBox : newBox
                 }

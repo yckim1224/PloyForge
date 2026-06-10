@@ -45,7 +45,8 @@ export interface Material {
  * A translucent reference image rendered beneath the editor. Purely visual: it
  * never touches the `.poly` document. Held in memory only (object URL), so it is
  * not persisted across reloads. `x`/`z` are the world coordinates of the image's
- * top-left corner; `scale` is meters-per-image-pixel; `opacity` is 0..1.
+ * top-left corner; `scaleX`/`scaleZ` are meters-per-image-pixel per axis (equal
+ * for a uniform image); `opacity` is 0..1.
  */
 export interface BackgroundImage {
   img: HTMLImageElement
@@ -55,7 +56,8 @@ export interface BackgroundImage {
   naturalHeight: number
   x: number
   z: number
-  scale: number
+  scaleX: number
+  scaleZ: number
   opacity: number
 }
 

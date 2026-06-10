@@ -7,33 +7,37 @@ export interface NodeRect {
   x: number
   /** Node screen y of the top-left corner, in px. */
   y: number
-  /** Uniform scale factor Konva applied during a transform (1 for a plain move). */
+  /** Horizontal scale factor Konva applied during a transform (1 for a plain move). */
   scaleX: number
+  /** Vertical scale factor Konva applied during a transform (1 for a plain move). */
+  scaleY: number
 }
 
 /**
  * Convert a dragged/resized image node back to its world-space top-left and the
- * meters-per-pixel `scale` stored on the background. The Transformer reports its
- * resize as a node scale factor; folding it into `prevScale` lets the derived
- * render reproduce the same on-screen size after the node scale is reset to 1.
- * A plain move passes `scaleX: 1`, leaving the scale unchanged.
+ * per-axis meters-per-pixel scales stored on the background. The Transformer
+ * reports its resize as node scale factors; folding them into the previous scales
+ * lets the derived render reproduce the same on-screen size after the node scale
+ * is reset to 1. A plain move passes `scaleX: 1, scaleY: 1`, leaving scale unchanged.
  */
 export function nodeRectToWorld(
   rect: NodeRect,
   vp: Viewport,
-  prevScale: number,
-): { x: number; z: number; scale: number } {
+  prevScaleX: number,
+  prevScaleZ: number,
+): { x: number; z: number; scaleX: number; scaleZ: number } {
   const tl = screenToWorld(vp, rect.x, rect.y)
-  return { x: tl.x, z: tl.z, scale: prevScale * rect.scaleX }
+  return { x: tl.x, z: tl.z, scaleX: prevScaleX * rect.scaleX, scaleZ: prevScaleZ * rect.scaleY }
 }
 
 export type ResizeAnchor = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 
-/** A background image rect in world space (top-left x/z, meters-per-pixel scale). */
+/** A background image rect in world space (top-left x/z, per-axis meters-per-pixel). */
 export interface BgRect {
   x: number
   z: number
-  scale: number
+  scaleX: number
+  scaleZ: number
   naturalWidth: number
   naturalHeight: number
 }
@@ -56,8 +60,8 @@ export function asCornerAnchor(name: string | null | undefined): ResizeAnchor | 
 
 /** World position of one corner of a rect (z grows upward; the image extends down). */
 function corner(rect: BgRect, which: ResizeAnchor): { x: number; z: number } {
-  const w = rect.naturalWidth * rect.scale
-  const h = rect.naturalHeight * rect.scale
+  const w = rect.naturalWidth * rect.scaleX
+  const h = rect.naturalHeight * rect.scaleZ
   switch (which) {
     case 'top-left':
       return { x: rect.x, z: rect.z }
@@ -72,9 +76,9 @@ function corner(rect: BgRect, which: ResizeAnchor): { x: number; z: number } {
 
 /**
  * Snap a uniform (keep-ratio) resize so the dragged corner's dominant axis lands
- * on a grid line, holding the opposite corner fixed. `prev` is the pre-gesture
- * rect; `raw` is the rect from the raw transform. Returns the new top-left and
- * scale, or null when the snap would be degenerate (caller keeps the raw result).
+ * on a grid line, holding the opposite corner fixed. Used for the locked path,
+ * where scaleX === scaleZ; returns the new top-left and the (uniform) scale, or
+ * null when the snap would be degenerate (caller keeps the raw result).
  */
 export function snapResizeToGrid(
   prev: BgRect,
@@ -110,8 +114,80 @@ export function snapResizeToGrid(
 }
 
 /**
- * Resolve the final rect after a resize: grid-snapped per {@link snapResizeToGrid}
- * unless `free` (Alt) is held, the anchor is not a corner, or the snap degenerates.
+ * Snap one axis: pull the moved edge to the grid, hold the fixed edge, and report
+ * the resulting `[lo, hi]` span and scale. Axis-agnostic — callers pass already
+ * signed world coordinates and pick `lo` (X top-left = left) or `hi` (Z top-left
+ * = top, since z grows upward).
+ */
+export function snapEdge(
+  moved: number,
+  fixed: number,
+  naturalDim: number,
+  spacing: number,
+): { lo: number; hi: number; scale: number } {
+  const snapped = snap(moved, spacing)
+  const lo = Math.min(snapped, fixed)
+  const hi = Math.max(snapped, fixed)
+  return { lo, hi, scale: (hi - lo) / naturalDim }
+}
+
+/** Relative threshold deciding whether an axis actually changed during a resize. */
+const SCALE_EPS = 1e-6
+
+/**
+ * Snap a non-uniform (keep-ratio off) resize per axis: each axis that changed has
+ * its moved edge snapped to the grid while the opposite edge stays fixed; an axis
+ * that did not change keeps its previous origin and scale (so a single-axis
+ * stretch never perturbs the other axis). Works for corner and side drags alike
+ * by comparing prev vs raw edges — no anchor needed.
+ */
+export function snapResizeNonUniform(
+  prev: BgRect,
+  raw: BgRect,
+  spacing: number,
+): { x: number; z: number; scaleX: number; scaleZ: number } {
+  let x = prev.x
+  let scaleX = prev.scaleX
+  if (spacing > 0 && Math.abs(raw.scaleX - prev.scaleX) > prev.scaleX * SCALE_EPS) {
+    const prevLeft = prev.x
+    const prevRight = prev.x + prev.naturalWidth * prev.scaleX
+    const rawLeft = raw.x
+    const rawRight = raw.x + raw.naturalWidth * raw.scaleX
+    const leftMoved = Math.abs(rawLeft - prevLeft) >= Math.abs(rawRight - prevRight)
+    const e = leftMoved
+      ? snapEdge(rawLeft, prevRight, prev.naturalWidth, spacing)
+      : snapEdge(rawRight, prevLeft, prev.naturalWidth, spacing)
+    if (e.scale > 0) {
+      x = e.lo // X top-left = left edge (min)
+      scaleX = e.scale
+    }
+  }
+
+  let z = prev.z
+  let scaleZ = prev.scaleZ
+  if (spacing > 0 && Math.abs(raw.scaleZ - prev.scaleZ) > prev.scaleZ * SCALE_EPS) {
+    const prevTop = prev.z
+    const prevBottom = prev.z - prev.naturalHeight * prev.scaleZ
+    const rawTop = raw.z
+    const rawBottom = raw.z - raw.naturalHeight * raw.scaleZ
+    const topMoved = Math.abs(rawTop - prevTop) >= Math.abs(rawBottom - prevBottom)
+    const e = topMoved
+      ? snapEdge(rawTop, prevBottom, prev.naturalHeight, spacing)
+      : snapEdge(rawBottom, prevTop, prev.naturalHeight, spacing)
+    if (e.scale > 0) {
+      z = e.hi // Z top-left = top edge (max, since z grows upward)
+      scaleZ = e.scale
+    }
+  }
+
+  return { x, z, scaleX, scaleZ }
+}
+
+/**
+ * Resolve the final rect after a resize. `free` (Alt) keeps the raw result.
+ * When `locked`, snap uniformly via {@link snapResizeToGrid} (anchor-based);
+ * otherwise snap per axis via {@link snapResizeNonUniform} (the `anchor` is
+ * unused on this path — the moved edge is inferred from prev vs raw).
  */
 export function resolveResize(
   prev: BgRect,
@@ -119,9 +195,15 @@ export function resolveResize(
   anchor: string | null,
   spacing: number,
   free: boolean,
-): { x: number; z: number; scale: number } {
-  const fallback = { x: raw.x, z: raw.z, scale: raw.scale }
-  const a = asCornerAnchor(anchor)
-  if (free || !a) return fallback
-  return snapResizeToGrid(prev, raw, a, spacing) ?? fallback
+  locked: boolean,
+): { x: number; z: number; scaleX: number; scaleZ: number } {
+  const fallback = { x: raw.x, z: raw.z, scaleX: raw.scaleX, scaleZ: raw.scaleZ }
+  if (free) return fallback
+  if (locked) {
+    const a = asCornerAnchor(anchor)
+    if (!a) return fallback
+    const s = snapResizeToGrid(prev, raw, a, spacing)
+    return s ? { x: s.x, z: s.z, scaleX: s.scale, scaleZ: s.scale } : fallback
+  }
+  return snapResizeNonUniform(prev, raw, spacing)
 }
