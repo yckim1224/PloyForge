@@ -178,9 +178,11 @@ export function EditorStage() {
   const updateBackground = useEditorStore((s) => s.updateBackground)
   const nudgeBackground = useEditorStore((s) => s.nudgeBackground)
   const removeBackground = useEditorStore((s) => s.removeBackground)
+  const backgroundVisible = useEditorStore((s) => s.backgroundVisible)
   // Selected image with the select tool active -> lift to the top and make it
   // mouse-editable (drag to move, Transformer handles to resize).
-  const bgEditMode = background !== null && backgroundSelected && tool === 'select'
+  const bgEditMode =
+    background !== null && backgroundVisible && backgroundSelected && tool === 'select'
 
   useEffect(() => {
     const el = containerRef.current
@@ -707,7 +709,7 @@ export function EditorStage() {
           }}
           onClick={handleClick}
         >
-          {background && !bgEditMode && (
+          {background && backgroundVisible && !bgEditMode && (
             <Layer listening={false}>
               <KonvaImage
                 image={background.img}

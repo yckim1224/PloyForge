@@ -73,6 +73,8 @@ export interface EditorState {
   background: BackgroundImage | null
   /** True when the background image is the active selection (panel checkbox). */
   backgroundSelected: boolean
+  /** Whether the background image layer is shown (independent of selection). */
+  backgroundVisible: boolean
   selection: Selection
   tool: Tool
   /** Which element type a marquee (rubber-band) drag selects by default. */
@@ -178,6 +180,7 @@ export interface EditorState {
   nudgeBackground: (dirX: number, dirZ: number, scale: NudgeScale) => void
   removeBackground: () => void
   setBackgroundSelected: (selected: boolean) => void
+  setBackgroundVisible: (visible: boolean) => void
 
   // Selection
   setSelection: (sel: Partial<Selection>) => void
@@ -240,6 +243,7 @@ export const useEditorStore = create<EditorState>()(
   faces: [],
   background: null,
   backgroundSelected: false,
+  backgroundVisible: true,
   selection: emptySelection(),
   tool: 'select',
   marqueeTarget: 'point',
@@ -754,6 +758,8 @@ export const useEditorStore = create<EditorState>()(
         : { backgroundSelected: false },
     ),
 
+  setBackgroundVisible: (visible) => set({ backgroundVisible: visible }),
+
   setSelection: (sel) => set((s) => ({ selection: { ...s.selection, ...sel } })),
 
   clearSelection: () => set({ selection: emptySelection(), backgroundSelected: false }),
@@ -805,6 +811,7 @@ export const useEditorStore = create<EditorState>()(
       pendingLineStart: null,
       background: null,
       backgroundSelected: false,
+      backgroundVisible: true,
     })
   },
     }),

@@ -720,6 +720,14 @@ describe('editorStore background image', () => {
     expect(store().backgroundSelected).toBe(false)
   })
 
+  test('backgroundVisible defaults true and toggles independently', () => {
+    expect(store().backgroundVisible).toBe(true)
+    store().setBackgroundVisible(false)
+    expect(store().backgroundVisible).toBe(false)
+    store().setBackgroundVisible(true)
+    expect(store().backgroundVisible).toBe(true)
+  })
+
   test('removeBackground clears the image and its selection', () => {
     addBg()
     store().setBackgroundSelected(true)

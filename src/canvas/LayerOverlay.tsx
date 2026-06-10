@@ -1,5 +1,6 @@
-import { Circle, Eye, EyeOff, Grid3x3, Hexagon, Spline } from 'lucide-react'
+import { Circle, Eye, EyeOff, Grid3x3, Hexagon, Image as ImageIcon, Spline } from 'lucide-react'
 import { useLayerStore, type LayerKey, type LayerMode } from '../store/layerStore'
+import { useEditorStore } from '../store/editorStore'
 
 const LAYERS: { id: LayerKey; label: string; Icon: typeof Grid3x3 }[] = [
   { id: 'grid', label: 'Grid', Icon: Grid3x3 },
@@ -20,6 +21,20 @@ export function LayerOverlay() {
   const toggle = useLayerStore((s) => s.toggle)
   const setAll = useLayerStore((s) => s.setAll)
 
+  const background = useEditorStore((s) => s.background)
+  const backgroundVisible = useEditorStore((s) => s.backgroundVisible)
+  const setBackgroundVisible = useEditorStore((s) => s.setBackgroundVisible)
+
+  // Show-all / hide-all sweep the background layer along with the others.
+  const showAll = () => {
+    setAll(true)
+    setBackgroundVisible(true)
+  }
+  const hideAll = () => {
+    setAll(false)
+    setBackgroundVisible(false)
+  }
+
   const state: Record<LayerKey, boolean | LayerMode> = { grid, points, lines, faces }
 
   return (
@@ -32,7 +47,7 @@ export function LayerOverlay() {
         type="button"
         title="Show all layers"
         aria-label="Show all layers"
-        onClick={() => setAll(true)}
+        onClick={showAll}
         className="flex size-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100"
       >
         <Eye className="size-4" />
@@ -41,7 +56,7 @@ export function LayerOverlay() {
         type="button"
         title="Hide all layers"
         aria-label="Hide all layers"
-        onClick={() => setAll(false)}
+        onClick={hideAll}
         className="flex size-9 items-center justify-center rounded-md text-neutral-600 transition-colors hover:bg-neutral-100"
       >
         <EyeOff className="size-4" />
@@ -80,6 +95,25 @@ export function LayerOverlay() {
           </button>
         )
       })}
+      {background && (
+        <>
+          <div className="my-0.5 h-px bg-neutral-200" />
+          <button
+            type="button"
+            title={`Toggle background image (${backgroundVisible ? 'on' : 'off'})`}
+            aria-label="Toggle background image"
+            aria-pressed={backgroundVisible}
+            onClick={() => setBackgroundVisible(!backgroundVisible)}
+            className={`flex size-9 items-center justify-center rounded-md transition-colors ${
+              backgroundVisible
+                ? 'bg-violet-600 text-white'
+                : 'text-neutral-400 hover:bg-neutral-100'
+            }`}
+          >
+            <ImageIcon className="size-4" />
+          </button>
+        </>
+      )}
     </div>
   )
 }
