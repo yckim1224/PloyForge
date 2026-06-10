@@ -1,5 +1,6 @@
 import { CollapsibleSection } from '../components/CollapsibleSection'
 import { AppActions } from './AppActions'
+import { BackgroundSection } from './BackgroundSection'
 import { PointsSection } from './PointsSection'
 import { LinesSection } from './LinesSection'
 import { FacesSection } from './FacesSection'
@@ -11,6 +12,7 @@ export function ControlPanel() {
         <AppActions />
       </CollapsibleSection>
 
+      <BackgroundSection />
       <PointsSection />
       <LinesSection />
       <FacesSection />

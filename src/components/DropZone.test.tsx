@@ -2,6 +2,7 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { DropZone } from './DropZone'
 import { useImportStore } from '../store/importStore'
+import { useEditorStore } from '../store/editorStore'
 import { useToastStore } from '../store/toastStore'
 
 const realRequestImport = useImportStore.getState().requestImport
@@ -79,7 +80,19 @@ describe('DropZone', () => {
     expect(importMock).not.toHaveBeenCalled()
     const errors = useToastStore.getState().toasts.filter((t) => t.level === 'error')
     expect(errors).toHaveLength(1)
-    expect(errors[0].message).toMatch(/Only one .poly file/)
+    expect(errors[0].message).toMatch(/Only one file/)
+  })
+
+  test('routes an image drop to the background loader, not the importer', () => {
+    const bgMock = vi.fn()
+    const prev = useEditorStore.getState().loadBackgroundFromFile
+    useEditorStore.setState({ loadBackgroundFromFile: bgMock })
+    render(<DropZone />)
+    const img = new File(['x'], 'fig.png', { type: 'image/png' })
+    dispatch(fileDragEvent('drop', { files: [img] }))
+    expect(bgMock).toHaveBeenCalledTimes(1)
+    expect(importMock).not.toHaveBeenCalled()
+    useEditorStore.setState({ loadBackgroundFromFile: prev })
   })
 
   test('ignores a drop with no files', () => {

@@ -59,12 +59,14 @@ beforeEach(() => {
 })
 
 describe('importStore.requestImport', () => {
-  test('rejects an unsupported extension with an error toast and no load', async () => {
-    await imports().requestImport(polyFile(TRIANGLE, 'image.png'))
-    expect(editor().points.length).toBe(0)
+  test('parses by content regardless of file extension', async () => {
+    // Image routing happens in DropZone; any file reaching requestImport is
+    // parsed as a .poly, so the extension no longer gates the import.
+    await imports().requestImport(polyFile(TRIANGLE, 'mesh.txt'))
+    expect(editor().points.length).toBe(3)
+    expect(editor().lines.length).toBe(3)
     expect(imports().pending).toBeNull()
-    expect(toastsOf('error')).toHaveLength(1)
-    expect(toastsOf('error')[0]).toMatch(/Unsupported file type/)
+    expect(toastsOf('success')).toHaveLength(1)
   })
 
   test('reports a parse failure and leaves the document unchanged', async () => {

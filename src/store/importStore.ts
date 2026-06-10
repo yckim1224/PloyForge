@@ -3,9 +3,6 @@ import { parsePoly, type ParseResult } from '../poly/parse'
 import { hasGeometry, useEditorStore } from './editorStore'
 import { toast } from './toastStore'
 
-/** Extensions accepted for import; mirrors the file input's `accept` attribute. */
-const ACCEPTED_EXT = ['.poly', '.smesh'] as const
-
 /** Cap on per-import warning toasts before the rest collapse into a summary. */
 export const MAX_WARNING_TOASTS = 5
 
@@ -28,11 +25,6 @@ interface ImportState {
   cancel: () => void
 }
 
-function hasAcceptedExt(name: string): boolean {
-  const lower = name.toLowerCase()
-  return ACCEPTED_EXT.some((ext) => lower.endsWith(ext))
-}
-
 /**
  * Replace the document with a parsed result and report the outcome. File import
  * replaces everything, so the undo history is cleared -- undoing into a
@@ -52,10 +44,8 @@ export const useImportStore = create<ImportState>((set, get) => ({
   pending: null,
 
   requestImport: async (file) => {
-    if (!hasAcceptedExt(file.name)) {
-      toast.error(`Unsupported file type: "${file.name}". Drop a .poly file.`)
-      return
-    }
+    // Image files are routed to the background before reaching here (DropZone);
+    // anything that lands here is parsed as a .poly regardless of extension.
     let result: ParseResult
     try {
       result = parsePoly(await file.text())

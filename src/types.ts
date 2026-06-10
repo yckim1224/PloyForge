@@ -42,6 +42,24 @@ export interface Material {
 }
 
 /**
+ * A translucent reference image rendered beneath the editor. Purely visual: it
+ * never touches the `.poly` document. Held in memory only (object URL), so it is
+ * not persisted across reloads. `x`/`z` are the world coordinates of the image's
+ * top-left corner; `scale` is meters-per-image-pixel; `opacity` is 0..1.
+ */
+export interface BackgroundImage {
+  img: HTMLImageElement
+  objectUrl: string
+  fileName: string
+  naturalWidth: number
+  naturalHeight: number
+  x: number
+  z: number
+  scale: number
+  opacity: number
+}
+
+/**
  * The serializable editor document. Faces are derived (excluded) and material
  * Types are stored as a face-keyed map (`faceId -> { mattype, size }`).
  * `faceId` follows `face:${sorted-pointIds}` so it survives translations.

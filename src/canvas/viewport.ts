@@ -78,23 +78,35 @@ const FALLBACK_HALF_EXTENT = 100_000
  * Fit the bounding box of `points` within (width, height) with padding, centered.
  * Falls back to a 200km-wide square centered at the origin when `points` is empty.
  */
-export function fitPoints(points: Point[], width: number, height: number, pad = 48): Viewport {
+export function fitPoints(
+  points: Point[],
+  width: number,
+  height: number,
+  pad = 48,
+  extraCorners: WorldPoint[] = [],
+): Viewport {
+  // Frame points plus any extra corners (e.g. a background image's bounding box)
+  // so Fit View captures everything on the canvas, not just the geometry.
+  const coords: WorldPoint[] = [
+    ...points.map((p) => ({ x: p.x, z: p.z })),
+    ...extraCorners,
+  ]
   let xmin: number
   let xmax: number
   let zmin: number
   let zmax: number
-  if (points.length === 0) {
+  if (coords.length === 0) {
     xmin = -FALLBACK_HALF_EXTENT
     xmax = FALLBACK_HALF_EXTENT
     zmin = -FALLBACK_HALF_EXTENT
     zmax = FALLBACK_HALF_EXTENT
   } else {
-    xmin = points[0].x
+    xmin = coords[0].x
     xmax = xmin
-    zmin = points[0].z
+    zmin = coords[0].z
     zmax = zmin
-    for (let i = 1; i < points.length; i++) {
-      const p = points[i]
+    for (let i = 1; i < coords.length; i++) {
+      const p = coords[i]
       if (p.x < xmin) xmin = p.x
       else if (p.x > xmax) xmax = p.x
       if (p.z < zmin) zmin = p.z

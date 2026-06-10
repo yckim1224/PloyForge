@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Circle, Layer, Line, Rect, Stage, Text } from 'react-konva'
+import { Circle, Image as KonvaImage, Layer, Line, Rect, Stage, Text, Transformer } from 'react-konva'
 import type Konva from 'konva'
+import type { BackgroundImage } from '../types'
 import {
   collectSelectionPointIds,
   redoEdit,
@@ -37,6 +38,7 @@ import {
   type ScreenRect,
 } from './selection'
 import { exceededDragThreshold, isDraggableTarget, snapDelta } from './drag'
+import { nodeRectToWorld } from './imageTransform'
 
 const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
@@ -89,6 +91,26 @@ interface Hover {
   existingId?: string
 }
 
+/** Two opposite world corners of the background image's bounding box (or none). */
+function backgroundCorners(bg: BackgroundImage | null): { x: number; z: number }[] {
+  if (!bg) return []
+  return [
+    { x: bg.x, z: bg.z },
+    { x: bg.x + bg.naturalWidth * bg.scale, z: bg.z - bg.naturalHeight * bg.scale },
+  ]
+}
+
+/** True when a Konva node is the background image or one of its Transformer handles. */
+function isBackgroundTarget(node: Konva.Node | null): boolean {
+  let n: Konva.Node | null = node
+  while (n) {
+    if (typeof n.name === 'function' && n.name() === 'background') return true
+    if (typeof n.getClassName === 'function' && n.getClassName() === 'Transformer') return true
+    n = typeof n.getParent === 'function' ? n.getParent() : null
+  }
+  return false
+}
+
 export function EditorStage() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
@@ -114,6 +136,10 @@ export function EditorStage() {
   // delta. Kept in state (not a ref) so the canvas re-renders the offset and so
   // it is never read from a ref during render. null = no active drag.
   const [drag, setDrag] = useState<{ ids: Set<string>; dx: number; dz: number } | null>(null)
+  const bgImageRef = useRef<Konva.Image | null>(null)
+  const bgTransformerRef = useRef<Konva.Transformer | null>(null)
+  // Set when an image drag/resize just ended, so the trailing click is swallowed.
+  const justImageDragged = useRef(false)
 
   const points = useEditorStore((s) => s.points)
   const lines = useEditorStore((s) => s.lines)
@@ -147,6 +173,15 @@ export function EditorStage() {
   const setPendingLineStart = useEditorStore((s) => s.setPendingLineStart)
   const deleteSelection = useEditorStore((s) => s.deleteSelection)
 
+  const background = useEditorStore((s) => s.background)
+  const backgroundSelected = useEditorStore((s) => s.backgroundSelected)
+  const updateBackground = useEditorStore((s) => s.updateBackground)
+  const nudgeBackground = useEditorStore((s) => s.nudgeBackground)
+  const removeBackground = useEditorStore((s) => s.removeBackground)
+  // Selected image with the select tool active -> lift to the top and make it
+  // mouse-editable (drag to move, Transformer handles to resize).
+  const bgEditMode = background !== null && backgroundSelected && tool === 'select'
+
   useEffect(() => {
     const el = containerRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
@@ -158,7 +193,8 @@ export function EditorStage() {
       setSize({ w, h })
       if (!didInit.current && w > 0 && h > 0) {
         didInit.current = true
-        setVp(fitPoints(useEditorStore.getState().points, w, h))
+        const st = useEditorStore.getState()
+        setVp(fitPoints(st.points, w, h, undefined, backgroundCorners(st.background)))
       }
     })
     ro.observe(el)
@@ -169,7 +205,8 @@ export function EditorStage() {
     return useEditorStore.subscribe((state, prev) => {
       if (state.fitNonce === prev.fitNonce) return
       const { w, h } = sizeRef.current
-      if (w > 0 && h > 0) setVp(fitPoints(state.points, w, h))
+      if (w > 0 && h > 0)
+        setVp(fitPoints(state.points, w, h, undefined, backgroundCorners(state.background)))
     })
   }, [])
 
@@ -234,11 +271,17 @@ export function EditorStage() {
       // (the arrow moves the camera in that direction). Shift = larger step.
       // Alt = fine (1/10), Shift = large (10x); Alt wins when both are held.
       const arrowMove = (dirX: number, dirZ: number, shift: boolean, alt: boolean) => {
-        const sel = useEditorStore.getState().selection
+        const st = useEditorStore.getState()
+        const scale: NudgeScale = alt ? 'fine' : shift ? 'large' : 'normal'
+        // A selected background image moves with the arrows (regardless of tool).
+        if (st.backgroundSelected && st.background) {
+          nudgeBackground(dirX, dirZ, scale)
+          return
+        }
+        const sel = st.selection
         const hasSelection =
           sel.pointIds.length > 0 || sel.lineIds.length > 0 || sel.faceIds.length > 0
         if (hasSelection) {
-          const scale: NudgeScale = alt ? 'fine' : shift ? 'large' : 'normal'
           nudgeSelection(dirX, dirZ, scale)
           return
         }
@@ -249,7 +292,8 @@ export function EditorStage() {
       switch (e.key) {
         case 'Delete':
         case 'Backspace':
-          deleteSelection()
+          if (useEditorStore.getState().backgroundSelected) removeBackground()
+          else deleteSelection()
           break
         case 'Escape':
           setPendingLineStart(null)
@@ -315,7 +359,15 @@ export function EditorStage() {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
     }
-  }, [deleteSelection, clearSelection, setTool, setPendingLineStart, nudgeSelection])
+  }, [
+    deleteSelection,
+    clearSelection,
+    setTool,
+    setPendingLineStart,
+    nudgeSelection,
+    nudgeBackground,
+    removeBackground,
+  ])
 
   // Seed the coordinate HUD until the cursor first moves.
   useEffect(() => {
@@ -337,6 +389,21 @@ export function EditorStage() {
     layerFaces,
     setLayer,
   ])
+
+  // Attach the Transformer to the background image while in edit mode, and
+  // re-measure when the viewport or image geometry changes so the resize
+  // handles track the derived on-screen rect.
+  useEffect(() => {
+    const tr = bgTransformerRef.current
+    if (!tr) return
+    if (bgEditMode && bgImageRef.current) {
+      tr.nodes([bgImageRef.current])
+      tr.forceUpdate()
+    } else {
+      tr.nodes([])
+    }
+    tr.getLayer()?.batchDraw()
+  }, [bgEditMode, background, vp])
 
   // During a move drag, render the moved points (and the lines/faces that
   // reference them) offset by the live delta -- no store mutation until drop.
@@ -365,6 +432,12 @@ export function EditorStage() {
     // swallowed. Both a marquee and a move-drag can release off-stage.
     justMarqueed.current = false
     justDragged.current = false
+    justImageDragged.current = false
+    // In background-edit mode, let Konva's draggable image / Transformer own the
+    // gesture so the stage marquee and geometry move-drag stay out of the way.
+    if (bgEditMode && !spacePan && e.evt.button === 0 && isBackgroundTarget(e.target)) {
+      return
+    }
     if (spacePan || tool === 'pan' || e.evt.button === 1) {
       panning.current = { x: p.x, y: p.y }
       return
@@ -515,6 +588,13 @@ export function EditorStage() {
       justDragged.current = false
       return
     }
+    // An image drag/resize also ends with a click; swallow it so the image stays selected.
+    if (justImageDragged.current) {
+      justImageDragged.current = false
+      return
+    }
+    // A plain click on the background image keeps it selected (never clears).
+    if (isBackgroundTarget(e.target)) return
     const stage = e.target.getStage()
     const p = stage?.getPointerPosition()
     if (!p) return
@@ -627,6 +707,19 @@ export function EditorStage() {
           }}
           onClick={handleClick}
         >
+          {background && !bgEditMode && (
+            <Layer listening={false}>
+              <KonvaImage
+                image={background.img}
+                x={worldToScreen(vp, background.x, background.z).sx}
+                y={worldToScreen(vp, background.x, background.z).sy}
+                width={background.naturalWidth * background.scale * vp.scale}
+                height={background.naturalHeight * background.scale * vp.scale}
+                opacity={background.opacity}
+              />
+            </Layer>
+          )}
+
           {gridSettings.show && layerGrid && (
             <Layer listening={false}>
               {gridLines.map((l, i) => (
@@ -815,6 +908,55 @@ export function EditorStage() {
               />
             )}
           </Layer>
+
+          {/* Selected image rides on top so it can be freely dragged/resized. */}
+          {background && bgEditMode && (
+            <Layer>
+              <KonvaImage
+                ref={bgImageRef}
+                name="background"
+                image={background.img}
+                x={worldToScreen(vp, background.x, background.z).sx}
+                y={worldToScreen(vp, background.x, background.z).sy}
+                width={background.naturalWidth * background.scale * vp.scale}
+                height={background.naturalHeight * background.scale * vp.scale}
+                opacity={background.opacity}
+                draggable
+                onDragEnd={(e) => {
+                  const { x, z } = nodeRectToWorld(
+                    { x: e.target.x(), y: e.target.y(), scaleX: 1 },
+                    vp,
+                    background.scale,
+                  )
+                  justImageDragged.current = true
+                  updateBackground({ x, z })
+                }}
+                onTransformEnd={(e) => {
+                  const node = e.target
+                  const res = nodeRectToWorld(
+                    { x: node.x(), y: node.y(), scaleX: node.scaleX() },
+                    vp,
+                    background.scale,
+                  )
+                  // Reset the node scale: the derived render reproduces the new
+                  // size from `scale`, so leaving it on would double-apply.
+                  node.scaleX(1)
+                  node.scaleY(1)
+                  justImageDragged.current = true
+                  updateBackground({ x: res.x, z: res.z, scale: res.scale })
+                }}
+              />
+              <Transformer
+                ref={bgTransformerRef}
+                rotateEnabled={false}
+                keepRatio
+                enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right']}
+                boundBoxFunc={(oldBox, newBox) =>
+                  newBox.width < 8 || newBox.height < 8 ? oldBox : newBox
+                }
+              />
+            </Layer>
+          )}
         </Stage>
       )}
     </div>

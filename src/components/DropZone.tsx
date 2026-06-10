@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
 import { useImportStore } from '../store/importStore'
+import { useEditorStore } from '../store/editorStore'
 import { toast } from '../store/toastStore'
+import { isImageFile } from '../lib/imageFile'
 
 /** True when a drag carries OS files (vs. in-app element/text drags). */
 function isFileDrag(e: DragEvent): boolean {
@@ -51,10 +53,13 @@ export function DropZone() {
       const files = e.dataTransfer?.files
       if (!files || files.length === 0) return
       if (files.length > 1) {
-        toast.error('Only one .poly file can be imported at a time.')
+        toast.error('Only one file can be dropped at a time.')
         return
       }
-      void requestImport(files[0])
+      const file = files[0]
+      // Images become the background reference; everything else is parsed as .poly.
+      if (isImageFile(file)) useEditorStore.getState().loadBackgroundFromFile(file)
+      else void requestImport(file)
     }
 
     window.addEventListener('dragenter', onDragEnter)
@@ -75,7 +80,7 @@ export function DropZone() {
       <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-violet-400 bg-white/90 px-8 py-6 text-center shadow-lg dark:bg-neutral-900/90">
         <Upload className="size-6 text-violet-500" />
         <p className="text-sm font-medium text-violet-700 dark:text-violet-300">
-          Drop a <code className="font-mono">.poly</code> file to import
+          Drop a <code className="font-mono">.poly</code> file or an image to import
         </p>
       </div>
     </div>

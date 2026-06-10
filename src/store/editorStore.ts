@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { temporal } from 'zundo'
-import type { Face, Line, Point, PolyDocument } from '../types'
+import type { BackgroundImage, Face, Line, Point, PolyDocument } from '../types'
 import { uid } from '../lib/id'
 import {
   coordKey,
@@ -12,6 +12,7 @@ import {
 import { autoBoundaryFlag, type BoundingBox } from '../poly/boundary'
 import { detectFaces } from '../poly/faces'
 import { useSettingsStore } from './settingsStore'
+import { toast } from './toastStore'
 
 /** Convex envelope of the supplied points; an empty array yields a zero-extent box at the origin. */
 function pointsBoundingBox(points: Point[]): BoundingBox {
@@ -68,6 +69,10 @@ export interface EditorState {
   faceTypes: Record<string, { mattype: number; size: number }>
   /** Derived closed faces (recomputed on geometry change). */
   faces: Face[]
+  /** Optional translucent reference image drawn beneath the editor (memory only). */
+  background: BackgroundImage | null
+  /** True when the background image is the active selection (panel checkbox). */
+  backgroundSelected: boolean
   selection: Selection
   tool: Tool
   /** Which element type a marquee (rubber-band) drag selects by default. */
@@ -163,6 +168,17 @@ export interface EditorState {
   setFaceType: (faceId: string, mattype: number, size?: number) => void
   clearFaceType: (faceId: string) => void
 
+  // Background image (memory-only visual reference; never serialized)
+  setBackgroundElement: (
+    img: HTMLImageElement,
+    meta: { objectUrl: string; fileName: string; naturalWidth: number; naturalHeight: number },
+  ) => void
+  loadBackgroundFromFile: (file: File) => void
+  updateBackground: (patch: Partial<Pick<BackgroundImage, 'x' | 'z' | 'scale' | 'opacity'>>) => void
+  nudgeBackground: (dirX: number, dirZ: number, scale: NudgeScale) => void
+  removeBackground: () => void
+  setBackgroundSelected: (selected: boolean) => void
+
   // Selection
   setSelection: (sel: Partial<Selection>) => void
   clearSelection: () => void
@@ -222,6 +238,8 @@ export const useEditorStore = create<EditorState>()(
   lines: [],
   faceTypes: {},
   faces: [],
+  background: null,
+  backgroundSelected: false,
   selection: emptySelection(),
   tool: 'select',
   marqueeTarget: 'point',
@@ -260,13 +278,13 @@ export const useEditorStore = create<EditorState>()(
   selectSingle: (kind, id) => {
     const sel = emptySelection()
     sel[KIND_KEY[kind]] = [id]
-    set({ selection: sel })
+    set({ selection: sel, backgroundSelected: false })
   },
 
   selectMany: (kind, ids) => {
     const sel = emptySelection()
     sel[KIND_KEY[kind]] = ids
-    set({ selection: sel })
+    set({ selection: sel, backgroundSelected: false })
   },
 
   toggleSelect: (kind, id) => {
@@ -280,7 +298,7 @@ export const useEditorStore = create<EditorState>()(
       const next = arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]
       const sel = emptySelection()
       sel[key] = next
-      return { selection: sel }
+      return { selection: sel, backgroundSelected: false }
     })
   },
 
@@ -663,9 +681,82 @@ export const useEditorStore = create<EditorState>()(
     get().recomputeFaces()
   },
 
+  setBackgroundElement: (img, meta) => {
+    set({
+      background: {
+        img,
+        objectUrl: meta.objectUrl,
+        fileName: meta.fileName,
+        naturalWidth: meta.naturalWidth,
+        naturalHeight: meta.naturalHeight,
+        x: 0,
+        z: 0,
+        scale: 1,
+        opacity: 0.5,
+      },
+    })
+    // Frame the freshly added image: a 1:1 image is tiny next to the default
+    // grid spacing, so without this it can be hard to locate on the canvas.
+    get().requestFit()
+  },
+
+  loadBackgroundFromFile: (file) => {
+    const objectUrl = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      get().setBackgroundElement(img, {
+        objectUrl,
+        fileName: file.name,
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight,
+      })
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      toast.error(`Could not load image "${file.name}".`)
+    }
+    img.src = objectUrl
+  },
+
+  updateBackground: (patch) =>
+    set((s) => {
+      if (!s.background) return {}
+      const next = { ...s.background, ...patch }
+      // Guard invalid values regardless of source (panel edit or mouse gesture).
+      if (patch.opacity !== undefined) next.opacity = Math.min(1, Math.max(0, patch.opacity))
+      if (patch.scale !== undefined && !(patch.scale > 0)) next.scale = s.background.scale
+      return { background: next }
+    }),
+
+  nudgeBackground: (dirX, dirZ, scale) => {
+    const bg = get().background
+    if (!bg) return
+    const spacing = useSettingsStore.getState().grid.spacing
+    const step = scale === 'large' ? spacing * 10 : scale === 'fine' ? spacing / 10 : spacing
+    set({ background: { ...bg, x: bg.x + dirX * step, z: bg.z + dirZ * step } })
+  },
+
+  // Keep the object URL alive so an Undo can resurrect the image; it is revoked
+  // only on reset(), where the undo history is cleared.
+  removeBackground: () => set({ background: null, backgroundSelected: false }),
+
+  setBackgroundSelected: (selected) =>
+    // Mutually exclusive with geometry selection; switch to the select tool so
+    // the image is immediately mouse-manipulable.
+    set(
+      selected
+        ? {
+            backgroundSelected: true,
+            selection: emptySelection(),
+            tool: 'select',
+            pendingLineStart: null,
+          }
+        : { backgroundSelected: false },
+    ),
+
   setSelection: (sel) => set((s) => ({ selection: { ...s.selection, ...sel } })),
 
-  clearSelection: () => set({ selection: emptySelection() }),
+  clearSelection: () => set({ selection: emptySelection(), backgroundSelected: false }),
 
   loadDocument: (doc, discoveredMaterials) => {
     set((s) => ({
@@ -696,7 +787,15 @@ export const useEditorStore = create<EditorState>()(
     }
   },
 
-  reset: () =>
+  reset: () => {
+    const bg = get().background
+    if (bg) {
+      try {
+        URL.revokeObjectURL(bg.objectUrl)
+      } catch {
+        /* object URL already gone; ignore */
+      }
+    }
     set({
       points: [],
       lines: [],
@@ -704,7 +803,10 @@ export const useEditorStore = create<EditorState>()(
       faces: [],
       selection: emptySelection(),
       pendingLineStart: null,
-    }),
+      background: null,
+      backgroundSelected: false,
+    })
+  },
     }),
     {
       // Only geometry is undoable; selection/tool/faces are derived or transient.
@@ -712,12 +814,14 @@ export const useEditorStore = create<EditorState>()(
         points: s.points,
         lines: s.lines,
         faceTypes: s.faceTypes,
+        background: s.background,
       }),
       limit: 100,
       equality: (a, b) =>
         a.points === b.points &&
         a.lines === b.lines &&
-        a.faceTypes === b.faceTypes,
+        a.faceTypes === b.faceTypes &&
+        a.background === b.background,
       // A single user action calls set() several times (e.g. addLineByCoords ->
       // addPoint + addPoint + addLine). Record only the first change of each
       // synchronous burst so one action becomes exactly one undo step.

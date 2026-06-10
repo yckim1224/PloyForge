@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { collectSelectionPointIds, hasGeometry, useEditorStore } from './editorStore'
 import { useSettingsStore, defaultSettings } from './settingsStore'
 import { serializePoly } from '../poly/serialize'
@@ -659,5 +659,103 @@ describe('editorStore', () => {
     expect(has(ci, h)).toBe(true)
     expect(has(e, f)).toBe(false)
     expect(has(g, h)).toBe(false)
+  })
+})
+
+describe('editorStore background image', () => {
+  const fakeImg = () => ({}) as unknown as HTMLImageElement
+  const addBg = () =>
+    store().setBackgroundElement(fakeImg(), {
+      objectUrl: 'blob:test',
+      fileName: 'fig.png',
+      naturalWidth: 200,
+      naturalHeight: 100,
+    })
+
+  test('setBackgroundElement seeds defaults (0,0, scale 1, opacity 0.5)', () => {
+    addBg()
+    expect(store().background).toMatchObject({
+      x: 0,
+      z: 0,
+      scale: 1,
+      opacity: 0.5,
+      fileName: 'fig.png',
+      naturalWidth: 200,
+      naturalHeight: 100,
+    })
+  })
+
+  test('updateBackground clamps opacity to 0..1 and rejects non-positive scale', () => {
+    addBg()
+    store().updateBackground({ opacity: 1.5, scale: -3, x: 50 })
+    const bg = store().background!
+    expect(bg.opacity).toBe(1)
+    expect(bg.scale).toBe(1) // -3 rejected, keeps prior scale
+    expect(bg.x).toBe(50)
+    store().updateBackground({ opacity: -1 })
+    expect(store().background!.opacity).toBe(0)
+  })
+
+  test('nudgeBackground moves by grid spacing scaled by the nudge size', () => {
+    addBg()
+    const spacing = useSettingsStore.getState().grid.spacing
+    store().nudgeBackground(1, 0, 'normal')
+    expect(store().background!.x).toBe(spacing)
+    store().nudgeBackground(0, -1, 'large')
+    expect(store().background!.z).toBe(-spacing * 10)
+    store().nudgeBackground(-1, 0, 'fine')
+    expect(store().background!.x).toBeCloseTo(spacing - spacing / 10)
+  })
+
+  test('selecting the image is mutually exclusive with geometry selection', () => {
+    const a = store().addPoint(0, 0)
+    store().selectSingle('point', a)
+    addBg()
+    store().setBackgroundSelected(true)
+    expect(store().backgroundSelected).toBe(true)
+    expect(store().selection.pointIds).toHaveLength(0)
+    expect(store().tool).toBe('select')
+    // Selecting geometry again drops the background selection.
+    store().selectSingle('point', a)
+    expect(store().backgroundSelected).toBe(false)
+  })
+
+  test('removeBackground clears the image and its selection', () => {
+    addBg()
+    store().setBackgroundSelected(true)
+    store().removeBackground()
+    expect(store().background).toBeNull()
+    expect(store().backgroundSelected).toBe(false)
+  })
+
+  test('reset revokes the object URL and clears the background', () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    addBg()
+    store().reset()
+    expect(revoke).toHaveBeenCalledWith('blob:test')
+    expect(store().background).toBeNull()
+    revoke.mockRestore()
+  })
+
+  test('add / move / remove are undoable as discrete steps', async () => {
+    // Each user action records one undo entry once the handleSet batch flag
+    // resets on the next macrotask, so yield between actions.
+    const tick = () => new Promise((r) => setTimeout(r, 0))
+    useEditorStore.temporal.getState().clear()
+    await tick()
+
+    addBg()
+    await tick()
+    store().updateBackground({ x: 999 })
+    await tick()
+    store().removeBackground()
+    await tick()
+
+    useEditorStore.temporal.getState().undo() // undo remove -> image back at x=999
+    expect(store().background?.x).toBe(999)
+    useEditorStore.temporal.getState().undo() // undo move -> x back to 0
+    expect(store().background?.x).toBe(0)
+    useEditorStore.temporal.getState().undo() // undo add -> null
+    expect(store().background).toBeNull()
   })
 })
