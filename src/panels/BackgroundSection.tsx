@@ -1,15 +1,15 @@
 import { useRef } from 'react'
-import { Button } from '@heroui/react'
-import { ImagePlus, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Trash2 } from 'lucide-react'
 import { CollapsibleSection } from '../components/CollapsibleSection'
+import { Menu } from '../components/Menu'
 import { NumberValue } from '../components/fields'
 import { useEditorStore } from '../store/editorStore'
 
 /**
  * Control-panel section for the translucent background reference image. The
- * image is added here (or by dropping it on the canvas) and positioned/scaled
- * via the fields below. Checking "Select" lifts it above the geometry so it can
- * be dragged and resized directly on the canvas.
+ * image is added from the header `…` menu (or by dropping it on the canvas) and
+ * positioned/scaled via the fields below. The checkbox lifts it above the
+ * geometry so it can be dragged and resized directly on the canvas.
  */
 export function BackgroundSection() {
   const background = useEditorStore((s) => s.background)
@@ -23,18 +23,46 @@ export function BackgroundSection() {
     e.target.value = ''
   }
 
+  const headerMenu = (
+    <Menu
+      align="right"
+      trigger={
+        <button
+          type="button"
+          aria-label="Background image actions"
+          className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+        >
+          <MoreHorizontal className="size-4" />
+        </button>
+      }
+      items={[
+        {
+          key: 'add',
+          label: background ? 'Replace image…' : 'Add background image',
+          onSelect: () => fileRef.current?.click(),
+        },
+      ]}
+    />
+  )
+
   return (
-    <CollapsibleSection title="Background image">
+    <CollapsibleSection title="Background image" headerRight={headerMenu}>
       <input ref={fileRef} type="file" accept="image/*" onChange={onPick} className="hidden" />
 
       {!background ? (
-        <Button size="sm" variant="secondary" onPress={() => fileRef.current?.click()}>
-          <ImagePlus className="size-4" />
-          Add background image
-        </Button>
+        <p className="text-xs text-neutral-400 dark:text-neutral-500">
+          No background image. Use the ⋯ menu to add one.
+        </p>
       ) : (
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              aria-label="Select background image"
+              checked={selected}
+              onChange={(e) => useEditorStore.getState().setBackgroundSelected(e.target.checked)}
+              className="size-3.5 shrink-0 accent-violet-600"
+            />
             <span
               className="flex-1 truncate text-xs text-neutral-600 dark:text-neutral-300"
               title={background.fileName}
@@ -75,22 +103,6 @@ export function BackgroundSection() {
               onCommit={(v) => useEditorStore.getState().updateBackground({ opacity: v })}
             />
           </div>
-
-          <label className="flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-200">
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={(e) => useEditorStore.getState().setBackgroundSelected(e.target.checked)}
-              className="size-3.5 accent-violet-600"
-            />
-            Select (move / resize on canvas)
-          </label>
-
-          {selected && (
-            <p className="text-[11px] leading-snug text-neutral-500 dark:text-neutral-400">
-              Drag to move, corner handles to resize. Arrow keys nudge; Delete removes.
-            </p>
-          )}
         </div>
       )}
     </CollapsibleSection>

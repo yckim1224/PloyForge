@@ -672,12 +672,12 @@ describe('editorStore background image', () => {
       naturalHeight: 100,
     })
 
-  test('setBackgroundElement seeds defaults (0,0, scale 1, opacity 0.5)', () => {
+  test('setBackgroundElement seeds defaults (0,0, scale 1000, opacity 0.5)', () => {
     addBg()
     expect(store().background).toMatchObject({
       x: 0,
       z: 0,
-      scale: 1,
+      scale: 1000,
       opacity: 0.5,
       fileName: 'fig.png',
       naturalWidth: 200,
@@ -690,7 +690,7 @@ describe('editorStore background image', () => {
     store().updateBackground({ opacity: 1.5, scale: -3, x: 50 })
     const bg = store().background!
     expect(bg.opacity).toBe(1)
-    expect(bg.scale).toBe(1) // -3 rejected, keeps prior scale
+    expect(bg.scale).toBe(1000) // -3 rejected, keeps prior scale
     expect(bg.x).toBe(50)
     store().updateBackground({ opacity: -1 })
     expect(store().background!.opacity).toBe(0)

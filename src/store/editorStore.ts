@@ -691,7 +691,7 @@ export const useEditorStore = create<EditorState>()(
         naturalHeight: meta.naturalHeight,
         x: 0,
         z: 0,
-        scale: 1,
+        scale: 1000,
         opacity: 0.5,
       },
     })
