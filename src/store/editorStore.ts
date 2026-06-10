@@ -55,12 +55,6 @@ export const emptySelection = (): Selection => ({
   faceIds: [],
 })
 
-export interface AddLineResult {
-  lineId: string | null
-  createdPointIds: string[]
-  error?: string
-}
-
 export interface EditorState {
   points: Point[]
   lines: Line[]
@@ -135,13 +129,6 @@ export interface EditorState {
    * so polygonize sees a conforming PSLG. Returns true if anything was split.
    */
   renode: () => boolean
-  addLineByCoords: (
-    x1: number,
-    z1: number,
-    x2: number,
-    z2: number,
-    autoCreate: boolean,
-  ) => AddLineResult
   updateLine: (id: string, patch: Partial<Pick<Line, 'bdryFlag' | 'p0' | 'p1'>>) => void
   setLineFlag: (ids: string[], flag: number) => void
   autoAssignBoundaryFlags: (ids?: string[]) => void
@@ -512,40 +499,6 @@ export const useEditorStore = create<EditorState>()(
     return true
   },
 
-  addLineByCoords: (x1, z1, x2, z2, autoCreate) => {
-    const created: string[] = []
-    const resolve = (x: number, z: number): string | null => {
-      const existing = findPointByCoord(get().points, x, z)
-      if (existing) return existing.id
-      if (!autoCreate) return null
-      const id = get().addPoint(x, z)
-      created.push(id)
-      return id
-    }
-    const a = resolve(x1, z1)
-    const b = resolve(x2, z2)
-    if (a === null || b === null) {
-      // Roll back any points created during this failed call.
-      if (created.length) get().removePoints(created)
-      return {
-        lineId: null,
-        createdPointIds: [],
-        error: 'Endpoint does not match an existing point (enable auto-create).',
-      }
-    }
-    const lineId = get().addLine(a, b)
-    if (lineId === null) {
-      // Roll back auto-created points so a rejected line leaves no orphans.
-      if (created.length) get().removePoints(created)
-      return {
-        lineId: null,
-        createdPointIds: [],
-        error: a === b ? 'Endpoints coincide; no line added.' : 'That segment already exists.',
-      }
-    }
-    return { lineId, createdPointIds: created }
-  },
-
   updateLine: (id, patch) => {
     set((s) => ({
       lines: s.lines.map((seg) => (seg.id === id ? { ...seg, ...patch } : seg)),
@@ -839,9 +792,9 @@ export const useEditorStore = create<EditorState>()(
         a.lines === b.lines &&
         a.faceTypes === b.faceTypes &&
         a.background === b.background,
-      // A single user action calls set() several times (e.g. addLineByCoords ->
-      // addPoint + addPoint + addLine). Record only the first change of each
-      // synchronous burst so one action becomes exactly one undo step.
+      // A single user action calls set() several times (e.g. the line tool's
+      // addLine -> renode -> recomputeFaces). Record only the first change of
+      // each synchronous burst so one action becomes exactly one undo step.
       handleSet: (record) => {
         let batching = false
         return (pastState) => {

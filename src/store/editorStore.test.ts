@@ -48,22 +48,6 @@ describe('editorStore', () => {
     expect(store().lines.length).toBe(1)
   })
 
-  test('addLineByCoords auto-creates missing points', () => {
-    const res = store().addLineByCoords(0, 0, 100, -50, true)
-    expect(res.lineId).not.toBeNull()
-    expect(store().points.length).toBe(2)
-    expect(store().lines.length).toBe(1)
-  })
-
-  test('addLineByCoords without auto-create fails cleanly on a missing point', () => {
-    store().addPoint(0, 0)
-    const res = store().addLineByCoords(0, 0, 100, -50, false)
-    expect(res.lineId).toBeNull()
-    expect(res.error).toBeTruthy()
-    expect(store().points.length).toBe(1)
-    expect(store().lines.length).toBe(0)
-  })
-
   test('removePoints cascades to incident segments', () => {
     const a = store().addPoint(0, 0)
     const b = store().addPoint(100, 0)
@@ -234,8 +218,9 @@ describe('editorStore', () => {
 
     // Draw a vertical line whose endpoints land mid-edge (new points on the
     // top and bottom edges). This must split the square into two faces.
-    const res = store().addLineByCoords(50, 0, 50, -100, true)
-    expect(res.lineId).not.toBeNull()
+    const top = store().addPoint(50, 0)
+    const bottom = store().addPoint(50, -100)
+    expect(store().addLine(top, bottom)).not.toBeNull()
     expect(store().faces.length).toBe(2)
     // Children have different faceIds from the parent, so both are untyped.
     for (const f of store().faces) {
@@ -429,23 +414,18 @@ describe('editorStore', () => {
     expect(store().faces[0].mattype).toBe(7)
   })
 
-  test('addLineByCoords rejects a duplicate segment without leaving orphan points', () => {
-    store().addLineByCoords(0, 0, 100, 0, true)
-    const pointCount = store().points.length
-    const res = store().addLineByCoords(0, 0, 100, 0, true)
-    expect(res.lineId).toBeNull()
-    expect(res.error).toBe('That segment already exists.')
-    expect(store().points.length).toBe(pointCount) // no orphan auto-created point
-    expect(store().lines.length).toBe(1)
-  })
-
   test('a single logical edit is one undo step (zundo handleSet batching)', async () => {
+    // Seed a segment so the next point lands on its interior.
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().addLine(a, b)
     const temporal = useEditorStore.temporal
     temporal.getState().clear()
     await Promise.resolve() // flush the batching microtask
     const before = temporal.getState().pastStates.length
-    // addLineByCoords calls set() three times (addPoint + addPoint + addLine).
-    store().addLineByCoords(0, 0, 100, 0, true)
+    // addPoint on the segment interior fires several set()s in one burst (add the
+    // point, then renode splits the segment): still exactly one undo step.
+    store().addPoint(50, 0)
     expect(temporal.getState().pastStates.length).toBe(before + 1)
   })
 
