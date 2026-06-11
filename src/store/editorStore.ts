@@ -162,7 +162,7 @@ export interface EditorState {
   // Background image (memory-only visual reference; never serialized)
   setBackgroundElement: (
     img: HTMLImageElement,
-    meta: { objectUrl: string; fileName: string; naturalWidth: number; naturalHeight: number },
+    meta: { fileName: string; naturalWidth: number; naturalHeight: number },
   ) => void
   loadBackgroundFromFile: (file: File) => void
   updateBackground: (
@@ -658,7 +658,6 @@ export const useEditorStore = create<EditorState>()(
     set({
       background: {
         img,
-        objectUrl: meta.objectUrl,
         fileName: meta.fileName,
         naturalWidth: meta.naturalWidth,
         naturalHeight: meta.naturalHeight,
@@ -678,12 +677,19 @@ export const useEditorStore = create<EditorState>()(
     const objectUrl = URL.createObjectURL(file)
     const img = new Image()
     img.onload = () => {
+      // The decoded element is what gets rendered, so the blob URL is no longer
+      // needed -- revoke it now (one per load) instead of leaking until reset().
+      if (!(img.naturalWidth > 0) || !(img.naturalHeight > 0)) {
+        URL.revokeObjectURL(objectUrl)
+        toast.error(`"${file.name}" has no usable image size.`)
+        return
+      }
       get().setBackgroundElement(img, {
-        objectUrl,
         fileName: file.name,
         naturalWidth: img.naturalWidth,
         naturalHeight: img.naturalHeight,
       })
+      URL.revokeObjectURL(objectUrl)
     }
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl)
@@ -711,8 +717,8 @@ export const useEditorStore = create<EditorState>()(
     set({ background: { ...bg, x: bg.x + dirX * step, z: bg.z + dirZ * step } })
   },
 
-  // Keep the object URL alive so an Undo can resurrect the image; it is revoked
-  // only on reset(), where the undo history is cleared.
+  // An Undo can resurrect the image from the retained HTMLImageElement (its blob
+  // URL was already revoked at load), so there is nothing to revoke here.
   removeBackground: () => set({ background: null, backgroundSelected: false }),
 
   setBackgroundSelected: (selected) =>
@@ -766,15 +772,8 @@ export const useEditorStore = create<EditorState>()(
     }
   },
 
-  reset: () => {
-    const bg = get().background
-    if (bg) {
-      try {
-        URL.revokeObjectURL(bg.objectUrl)
-      } catch {
-        /* object URL already gone; ignore */
-      }
-    }
+  // Background blob URLs are revoked at load, so nothing to clean up here.
+  reset: () =>
     set({
       points: [],
       lines: [],
@@ -786,8 +785,7 @@ export const useEditorStore = create<EditorState>()(
       backgroundSelected: false,
       backgroundVisible: true,
       backgroundLockAspect: true,
-    })
-  },
+    }),
     }),
     {
       // Only geometry is undoable; selection/tool/faces are derived or transient.

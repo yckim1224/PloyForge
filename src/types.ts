@@ -43,14 +43,14 @@ export interface Material {
 
 /**
  * A translucent reference image rendered beneath the editor. Purely visual: it
- * never touches the `.poly` document. Held in memory only (object URL), so it is
+ * never touches the `.poly` document. Held in memory only (the decoded
+ * `HTMLImageElement`; its source blob URL is revoked right after load), so it is
  * not persisted across reloads. `x`/`z` are the world coordinates of the image's
  * top-left corner; `scaleX`/`scaleZ` are meters-per-image-pixel per axis (equal
  * for a uniform image); `opacity` is 0..1.
  */
 export interface BackgroundImage {
   img: HTMLImageElement
-  objectUrl: string
   fileName: string
   naturalWidth: number
   naturalHeight: number

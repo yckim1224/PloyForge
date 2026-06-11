@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test } from 'vitest'
 import {
   collectSelectionPointIds,
   hasGeometry,
@@ -675,7 +675,6 @@ describe('editorStore background image', () => {
   const fakeImg = () => ({}) as unknown as HTMLImageElement
   const addBg = () =>
     store().setBackgroundElement(fakeImg(), {
-      objectUrl: 'blob:test',
       fileName: 'fig.png',
       naturalWidth: 200,
       naturalHeight: 100,
@@ -757,13 +756,56 @@ describe('editorStore background image', () => {
     expect(store().backgroundSelected).toBe(false)
   })
 
-  test('reset revokes the object URL and clears the background', () => {
-    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  test('reset clears the background', () => {
     addBg()
     store().reset()
-    expect(revoke).toHaveBeenCalledWith('blob:test')
     expect(store().background).toBeNull()
-    revoke.mockRestore()
+  })
+
+  test('loadBackgroundFromFile revokes the blob URL after decode and rejects zero-size images', () => {
+    const created: string[] = []
+    const revoked: string[] = []
+    const origCreate = URL.createObjectURL
+    const origRevoke = URL.revokeObjectURL
+    const OrigImage = globalThis.Image
+    let dims = { w: 200, h: 100 }
+    URL.createObjectURL = (() => {
+      const u = `blob:${created.length}`
+      created.push(u)
+      return u
+    }) as typeof URL.createObjectURL
+    URL.revokeObjectURL = ((u: string) => {
+      revoked.push(u)
+    }) as typeof URL.revokeObjectURL
+    // jsdom never fires onload from `img.src = ...`; stand in an Image whose src
+    // setter decodes synchronously with the configured natural dimensions.
+    class MockImage {
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      naturalWidth = 0
+      naturalHeight = 0
+      set src(_v: string) {
+        this.naturalWidth = dims.w
+        this.naturalHeight = dims.h
+        this.onload?.()
+      }
+    }
+    globalThis.Image = MockImage as unknown as typeof Image
+    try {
+      store().loadBackgroundFromFile(new File(['x'], 'fig.png', { type: 'image/png' }))
+      expect(store().background?.naturalWidth).toBe(200)
+      expect(revoked).toEqual(created) // the loaded URL was revoked after decode
+
+      store().removeBackground()
+      dims = { w: 0, h: 0 }
+      store().loadBackgroundFromFile(new File(['y'], 'bad.svg', { type: 'image/svg+xml' }))
+      expect(store().background).toBeNull() // zero-size rejected
+      expect(revoked).toEqual(created) // the rejected URL was revoked too
+    } finally {
+      URL.createObjectURL = origCreate
+      URL.revokeObjectURL = origRevoke
+      globalThis.Image = OrigImage
+    }
   })
 
   test('add / move / remove are undoable as discrete steps', async () => {
