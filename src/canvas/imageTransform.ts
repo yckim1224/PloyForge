@@ -1,4 +1,4 @@
-import { screenToWorld, type Viewport } from './viewport'
+import { screenToWorld, worldToScreen, type Viewport } from './viewport'
 import { snap } from '../lib/geometry'
 
 /** A Konva image node's post-gesture geometry, read in screen space. */
@@ -28,6 +28,21 @@ export function nodeRectToWorld(
 ): { x: number; z: number; scaleX: number; scaleZ: number } {
   const tl = screenToWorld(vp, rect.x, rect.y)
   return { x: tl.x, z: tl.z, scaleX: prevScaleX * rect.scaleX, scaleZ: prevScaleZ * rect.scaleY }
+}
+
+/**
+ * Snap a screen-space point so its world position lands on the nearest grid
+ * intersection, returned back in screen space. Shared by the image move
+ * (`dragBoundFunc`) and the unlocked resize handles (`anchorDragBoundFunc`).
+ */
+export function snapScreenPointToGrid(
+  vp: Viewport,
+  pos: { x: number; y: number },
+  spacing: number,
+): { x: number; y: number } {
+  const w = screenToWorld(vp, pos.x, pos.y)
+  const s = worldToScreen(vp, snap(w.x, spacing), snap(w.z, spacing))
+  return { x: s.sx, y: s.sy }
 }
 
 export type ResizeAnchor = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
@@ -279,4 +294,46 @@ export function decenterResize(
   }
 
   return { x, z, scaleX, scaleZ }
+}
+
+/**
+ * Decide the final resize box (in world terms) from the box Konva produced,
+ * given the active anchor and modifiers. Three regimes:
+ *  - `free` (Alt) + anchor: re-anchor Konva's centered box to its fixed corner
+ *    via {@link decenterResize} so Alt only bypasses grid snap (never centers).
+ *  - `locked` + corner: snap the uniform resize to the grid via
+ *    {@link snapResizeToGrid} (keepRatio defeats live anchor snapping).
+ *  - otherwise: return null, meaning "keep Konva's box as-is" (the unlocked
+ *    path already snapped live in `anchorDragBoundFunc`).
+ * `box` carries the world-space top-left (`left`/`top`) and the per-axis box
+ * scales. Pure so the branch selection is unit-tested; the caller handles the
+ * screen<->world conversion.
+ */
+export function resolveBoundBox(
+  prev: BgRect,
+  box: { left: number; top: number; scaleX: number; scaleZ: number },
+  anchor: string | null,
+  spacing: number,
+  free: boolean,
+  locked: boolean,
+): { x: number; z: number; scaleX: number; scaleZ: number } | null {
+  if (free && anchor) return decenterResize(prev, box.scaleX, box.scaleZ, anchor)
+  const a = asCornerAnchor(anchor)
+  if (locked && a) {
+    const snapped = snapResizeToGrid(
+      prev,
+      {
+        x: box.left,
+        z: box.top,
+        scaleX: box.scaleX,
+        scaleZ: box.scaleZ,
+        naturalWidth: prev.naturalWidth,
+        naturalHeight: prev.naturalHeight,
+      },
+      a,
+      spacing,
+    )
+    if (snapped) return { x: snapped.x, z: snapped.z, scaleX: snapped.scale, scaleZ: snapped.scale }
+  }
+  return null
 }

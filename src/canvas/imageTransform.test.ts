@@ -2,11 +2,13 @@ import { describe, expect, test } from 'vitest'
 import {
   decenterResize,
   nodeRectToWorld,
+  resolveBoundBox,
   resolveResize,
   scalePatchFromInput,
   snapEdge,
   snapResizeNonUniform,
   snapResizeToGrid,
+  snapScreenPointToGrid,
   type BgRect,
 } from './imageTransform'
 import { worldToScreen, type Viewport } from './viewport'
@@ -178,6 +180,67 @@ describe('decenterResize', () => {
     expect(out.scaleZ).toBe(1000) // z untouched
     expect(out.x).toBe(0)
     expect(out.z).toBe(0)
+  })
+})
+
+describe('snapScreenPointToGrid', () => {
+  test('snaps a screen point to the nearest grid intersection (round-trip)', () => {
+    // vp: scale 0.5, origin (100, 200). screen (106, 196) -> world (12, 8);
+    // snap to (10, 10) -> back to screen (105, 195).
+    const out = snapScreenPointToGrid(vp, { x: 106, y: 196 }, 10)
+    expect(out.x).toBeCloseTo(105)
+    expect(out.y).toBeCloseTo(195)
+  })
+})
+
+describe('resolveBoundBox', () => {
+  const prev: BgRect = { x: 0, z: 0, scaleX: 1, scaleZ: 1, naturalWidth: 100, naturalHeight: 50 }
+
+  test('free (Alt) + anchor re-anchors the centered box to its fixed corner', () => {
+    const big: BgRect = { ...prev, scaleX: 1000, scaleZ: 1000 }
+    // Konva centered to 1400 -> corner-anchored 1200, top-left held.
+    const out = resolveBoundBox(
+      big,
+      { left: 0, top: 0, scaleX: 1400, scaleZ: 1400 },
+      'bottom-right',
+      10,
+      true,
+      true,
+    )!
+    expect(out).toEqual({ x: 0, z: 0, scaleX: 1200, scaleZ: 1200 })
+  })
+
+  test('locked + corner snaps uniformly to the grid', () => {
+    const out = resolveBoundBox(
+      prev,
+      { left: 0, top: 0, scaleX: 1.07, scaleZ: 1.07 },
+      'bottom-right',
+      10,
+      false,
+      true,
+    )!
+    expect(out.scaleX).toBeCloseTo(1.1)
+    expect(out.scaleZ).toBeCloseTo(1.1)
+    expect(out.x).toBe(0)
+    expect(out.z).toBe(0)
+  })
+
+  test('unlocked (no Alt) returns null -> caller keeps Konva box', () => {
+    const out = resolveBoundBox(
+      prev,
+      { left: 0, top: 0, scaleX: 1.07, scaleZ: 1.2 },
+      'bottom-right',
+      10,
+      false,
+      false,
+    )
+    expect(out).toBeNull()
+  })
+
+  test('free without a known anchor falls through to null', () => {
+    expect(
+      resolveBoundBox(prev, { left: 0, top: 0, scaleX: 1.3, scaleZ: 1.3 }, null, 10, true, true),
+    ).toBeNull()
   })
 })
 

@@ -13,7 +13,7 @@ import { useSettingsStore } from '../store/settingsStore'
 import { useLayerStore } from '../store/layerStore'
 import { toast } from '../store/toastStore'
 import { materialColor } from '../constants/materials'
-import { snap, type Vec2 } from '../lib/geometry'
+import { type Vec2 } from '../lib/geometry'
 import { Toolbar } from '../components/Toolbar'
 import { Tooltip } from '../components/Tooltip'
 import { LayerOverlay } from './LayerOverlay'
@@ -39,11 +39,10 @@ import {
 } from './selection'
 import { exceededDragThreshold, isDraggableTarget, snapDelta } from './drag'
 import {
-  asCornerAnchor,
-  decenterResize,
   nodeRectToWorld,
+  resolveBoundBox,
   resolveResize,
-  snapResizeToGrid,
+  snapScreenPointToGrid,
 } from './imageTransform'
 
 const HIT_PX = 12
@@ -194,6 +193,17 @@ export function EditorStage() {
   // mouse-editable (drag to move, Transformer handles to resize).
   const bgEditMode =
     background !== null && backgroundVisible && backgroundSelected && tool === 'select'
+  // The image's top-left in screen space, computed once per render and reused by
+  // both the beneath-grid and the on-top edit layers.
+  const bgScreen = background ? worldToScreen(vp, background.x, background.z) : null
+  // Refresh the Alt flag from a live pointer event. Konva's dragBoundFunc /
+  // anchorDragBoundFunc / boundBoxFunc carry no React event, so the global
+  // keyboard listener below is the baseline; this keeps it exact per frame when
+  // an event *is* available (a Windows Alt press can blur the window and stale
+  // the keyboard tracker).
+  const syncAltFromEvent = (ev: { altKey: boolean }) => {
+    altDownRef.current = ev.altKey
+  }
 
   useEffect(() => {
     const el = containerRef.current
@@ -739,12 +749,12 @@ export function EditorStage() {
           }}
           onClick={handleClick}
         >
-          {background && backgroundVisible && !bgEditMode && (
+          {background && bgScreen && backgroundVisible && !bgEditMode && (
             <Layer listening={false}>
               <KonvaImage
                 image={background.img}
-                x={worldToScreen(vp, background.x, background.z).sx}
-                y={worldToScreen(vp, background.x, background.z).sy}
+                x={bgScreen.sx}
+                y={bgScreen.sy}
                 width={background.naturalWidth * background.scaleX * vp.scale}
                 height={background.naturalHeight * background.scaleZ * vp.scale}
                 opacity={background.opacity}
@@ -942,14 +952,14 @@ export function EditorStage() {
           </Layer>
 
           {/* Selected image rides on top so it can be freely dragged/resized. */}
-          {background && bgEditMode && (
+          {background && bgScreen && bgEditMode && (
             <Layer>
               <KonvaImage
                 ref={bgImageRef}
                 name="background"
                 image={background.img}
-                x={worldToScreen(vp, background.x, background.z).sx}
-                y={worldToScreen(vp, background.x, background.z).sy}
+                x={bgScreen.sx}
+                y={bgScreen.sy}
                 width={background.naturalWidth * background.scaleX * vp.scale}
                 height={background.naturalHeight * background.scaleZ * vp.scale}
                 opacity={background.opacity}
@@ -957,18 +967,9 @@ export function EditorStage() {
                 dragBoundFunc={(pos) => {
                   // Snap the top-left to the grid while dragging; Alt frees it.
                   if (altDownRef.current || !(gridSettings.spacing > 0)) return pos
-                  const w = screenToWorld(vp, pos.x, pos.y)
-                  const s = worldToScreen(
-                    vp,
-                    snap(w.x, gridSettings.spacing),
-                    snap(w.z, gridSettings.spacing),
-                  )
-                  return { x: s.sx, y: s.sy }
+                  return snapScreenPointToGrid(vp, pos, gridSettings.spacing)
                 }}
-                onDragMove={(e) => {
-                  // Keep Alt in sync from the live pointer event (see anchorDragBoundFunc).
-                  altDownRef.current = e.evt.altKey
-                }}
+                onDragMove={(e) => syncAltFromEvent(e.evt)}
                 onDragEnd={(e) => {
                   const { x, z } = nodeRectToWorld(
                     { x: e.target.x(), y: e.target.y(), scaleX: 1, scaleY: 1 },
@@ -1036,10 +1037,9 @@ export function EditorStage() {
                       ]
                 }
                 anchorDragBoundFunc={(_oldPos, newPos, e) => {
-                  // Sync our Alt flag with Konva's own (mouse-event source) every frame,
-                  // before boundBoxFunc reads it -- keyboard tracking can go stale when a
-                  // Windows Alt press blurs the window.
-                  if (e) altDownRef.current = e.altKey
+                  // Sync Alt from Konva's mouse event every frame, before boundBoxFunc
+                  // reads it (keyboard tracking can go stale on a Windows Alt blur).
+                  if (e) syncAltFromEvent(e)
                   // Live grid snap for unlocked resize handles, mirroring the move
                   // dragBoundFunc. Locked snaps in boundBoxFunc (keepRatio re-projects the
                   // corner, defeating anchor snapping); Alt bypasses snap and is re-anchored
@@ -1047,18 +1047,11 @@ export function EditorStage() {
                   if (backgroundLockAspect || altDownRef.current || !(gridSettings.spacing > 0)) {
                     return newPos
                   }
-                  const w = screenToWorld(vp, newPos.x, newPos.y)
-                  const s = worldToScreen(
-                    vp,
-                    snap(w.x, gridSettings.spacing),
-                    snap(w.z, gridSettings.spacing),
-                  )
-                  return { x: s.sx, y: s.sy }
+                  return snapScreenPointToGrid(vp, newPos, gridSettings.spacing)
                 }}
                 boundBoxFunc={(oldBox, newBox) => {
                   if (newBox.width < 8 || newBox.height < 8) return oldBox
                   if (!background || !(gridSettings.spacing > 0)) return newBox
-                  const anchor = bgActiveAnchorRef.current
                   const dims = {
                     naturalWidth: background.naturalWidth,
                     naturalHeight: background.naturalHeight,
@@ -1070,50 +1063,34 @@ export function EditorStage() {
                     scaleZ: background.scaleZ,
                     ...dims,
                   }
-                  // The box Konva produced as per-axis world scales (these are the
-                  // centered scales when Alt is held).
-                  const left = screenToWorld(vp, newBox.x, newBox.y).x
+                  // Convert Konva's screen box to world: the top-left plus the far
+                  // extents give the per-axis box scales (these are the *centered*
+                  // scales when Alt is held).
+                  const tl = screenToWorld(vp, newBox.x, newBox.y)
                   const right = screenToWorld(vp, newBox.x + newBox.width, newBox.y).x
-                  const top = screenToWorld(vp, newBox.x, newBox.y).z
                   const bottom = screenToWorld(vp, newBox.x, newBox.y + newBox.height).z
-                  const boxScaleX = (right - left) / dims.naturalWidth
-                  const boxScaleZ = (top - bottom) / dims.naturalHeight
-                  const toBox = (r: { x: number; z: number; scaleX: number; scaleZ: number }) => {
-                    const s = worldToScreen(vp, r.x, r.z)
-                    return {
-                      x: s.sx,
-                      y: s.sy,
-                      width: dims.naturalWidth * r.scaleX * vp.scale,
-                      height: dims.naturalHeight * r.scaleZ * vp.scale,
-                      rotation: 0,
-                    }
+                  const resolved = resolveBoundBox(
+                    prev,
+                    {
+                      left: tl.x,
+                      top: tl.z,
+                      scaleX: (right - tl.x) / dims.naturalWidth,
+                      scaleZ: (tl.z - bottom) / dims.naturalHeight,
+                    },
+                    bgActiveAnchorRef.current,
+                    gridSettings.spacing,
+                    altDownRef.current,
+                    backgroundLockAspect,
+                  )
+                  if (!resolved) return newBox // unlocked path already snapped live
+                  const s = worldToScreen(vp, resolved.x, resolved.z)
+                  return {
+                    x: s.sx,
+                    y: s.sy,
+                    width: dims.naturalWidth * resolved.scaleX * vp.scale,
+                    height: dims.naturalHeight * resolved.scaleZ * vp.scale,
+                    rotation: 0,
                   }
-                  // Free (Alt): Konva centered the resize -> re-anchor it to the fixed
-                  // corner so Alt only bypasses grid snap (never centers). No snap.
-                  if (altDownRef.current && anchor) {
-                    return toBox(decenterResize(prev, boxScaleX, boxScaleZ, anchor))
-                  }
-                  // Locked + not Alt: snap the uniform resize to the grid here (keepRatio
-                  // defeats anchorDragBoundFunc). boundBoxFunc runs after keepRatio.
-                  const a = asCornerAnchor(anchor)
-                  if (backgroundLockAspect && a) {
-                    const snapped = snapResizeToGrid(
-                      prev,
-                      { x: left, z: top, scaleX: boxScaleX, scaleZ: boxScaleZ, ...dims },
-                      a,
-                      gridSettings.spacing,
-                    )
-                    if (snapped) {
-                      return toBox({
-                        x: snapped.x,
-                        z: snapped.z,
-                        scaleX: snapped.scale,
-                        scaleZ: snapped.scale,
-                      })
-                    }
-                  }
-                  // Unlocked + not Alt already snapped live via anchorDragBoundFunc.
-                  return newBox
                 }}
               />
             </Layer>
