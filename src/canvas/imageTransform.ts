@@ -210,3 +210,48 @@ export function resolveResize(
   }
   return snapResizeNonUniform(prev, raw, spacing)
 }
+
+/**
+ * Undo Konva's Alt "centered scaling" for a resize. Konva grows the box
+ * symmetrically about its center under Alt (2x the corner displacement); given
+ * `prev` (pre-gesture rect) and the per-axis scales of that centered box, this
+ * returns the rect anchored to the corner/edge opposite `anchor` instead. The
+ * corner-anchored scale is the midpoint of the previous and centered scales (so
+ * the dragged corner stays under the cursor). An axis the anchor does not move
+ * (a side handle) is left untouched. No grid snapping — this is the free path.
+ */
+export function decenterResize(
+  prev: BgRect,
+  boxScaleX: number,
+  boxScaleZ: number,
+  anchor: string,
+): { x: number; z: number; scaleX: number; scaleZ: number } {
+  const cornerScaleX = (prev.scaleX + boxScaleX) / 2
+  const cornerScaleZ = (prev.scaleZ + boxScaleZ) / 2
+
+  let x = prev.x
+  let scaleX = prev.scaleX
+  if (anchor.includes('left')) {
+    // Left edge moves; hold the right edge fixed.
+    const rightX = prev.x + prev.naturalWidth * prev.scaleX
+    scaleX = cornerScaleX
+    x = rightX - prev.naturalWidth * cornerScaleX
+  } else if (anchor.includes('right')) {
+    // Right edge moves; the left edge (x) stays fixed.
+    scaleX = cornerScaleX
+  }
+
+  let z = prev.z
+  let scaleZ = prev.scaleZ
+  if (anchor.includes('top')) {
+    // Top edge moves; hold the bottom edge fixed (z grows upward).
+    const bottomZ = prev.z - prev.naturalHeight * prev.scaleZ
+    scaleZ = cornerScaleZ
+    z = bottomZ + prev.naturalHeight * cornerScaleZ
+  } else if (anchor.includes('bottom')) {
+    // Bottom edge moves; the top edge (z) stays fixed.
+    scaleZ = cornerScaleZ
+  }
+
+  return { x, z, scaleX, scaleZ }
+}

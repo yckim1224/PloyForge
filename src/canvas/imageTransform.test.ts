@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  decenterResize,
   nodeRectToWorld,
   resolveResize,
   snapEdge,
@@ -146,5 +147,35 @@ describe('resolveResize', () => {
     const out = resolveResize(prev, raw, null, 10, false, false)
     expect(out.scaleX).toBeCloseTo(1.1) // right 107 -> 110
     expect(out.scaleZ).toBeCloseTo(1.0) // bottom -53.5 -> -50
+  })
+})
+
+describe('decenterResize', () => {
+  const prev: BgRect = { x: 0, z: 0, scaleX: 1000, scaleZ: 1000, naturalWidth: 100, naturalHeight: 50 }
+
+  test('undoes the 2x centering and anchors the opposite corner (bottom-right)', () => {
+    // Konva centered the resize to scale 1400 (2x growth); corner-anchored is 1200.
+    const out = decenterResize(prev, 1400, 1400, 'bottom-right')
+    expect(out.x).toBe(0) // top-left held
+    expect(out.z).toBe(0)
+    expect(out.scaleX).toBe(1200)
+    expect(out.scaleZ).toBe(1200)
+  })
+
+  test('anchors the bottom-right when dragging top-left', () => {
+    const out = decenterResize(prev, 1400, 1400, 'top-left')
+    expect(out.scaleX).toBe(1200)
+    expect(out.scaleZ).toBe(1200)
+    // The fixed (bottom-right) corner is preserved at (100000, -50000).
+    expect(out.x + prev.naturalWidth * out.scaleX).toBe(100000)
+    expect(out.z - prev.naturalHeight * out.scaleZ).toBe(-50000)
+  })
+
+  test('a side handle moves only its axis (middle-right)', () => {
+    const out = decenterResize(prev, 1400, 1000, 'middle-right')
+    expect(out.scaleX).toBe(1200)
+    expect(out.scaleZ).toBe(1000) // z untouched
+    expect(out.x).toBe(0)
+    expect(out.z).toBe(0)
   })
 })

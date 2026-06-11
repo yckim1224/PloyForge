@@ -38,7 +38,13 @@ import {
   type ScreenRect,
 } from './selection'
 import { exceededDragThreshold, isDraggableTarget, snapDelta } from './drag'
-import { asCornerAnchor, nodeRectToWorld, resolveResize, snapResizeToGrid } from './imageTransform'
+import {
+  asCornerAnchor,
+  decenterResize,
+  nodeRectToWorld,
+  resolveResize,
+  snapResizeToGrid,
+} from './imageTransform'
 
 const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
@@ -959,6 +965,10 @@ export function EditorStage() {
                   )
                   return { x: s.sx, y: s.sy }
                 }}
+                onDragMove={(e) => {
+                  // Keep Alt in sync from the live pointer event (see anchorDragBoundFunc).
+                  altDownRef.current = e.evt.altKey
+                }}
                 onDragEnd={(e) => {
                   const { x, z } = nodeRectToWorld(
                     { x: e.target.x(), y: e.target.y(), scaleX: 1, scaleY: 1 },
@@ -1025,11 +1035,15 @@ export function EditorStage() {
                         'bottom-right',
                       ]
                 }
-                anchorDragBoundFunc={(_oldPos, newPos) => {
-                  // Live grid snap for resize handles, mirroring the move dragBoundFunc.
-                  // Only when unlocked: with aspect locked, Konva's keepRatio re-projects
-                  // the corner onto the original diagonal and would pull it off any snapped
-                  // anchor, so locked snaps in boundBoxFunc instead. Alt frees it.
+                anchorDragBoundFunc={(_oldPos, newPos, e) => {
+                  // Sync our Alt flag with Konva's own (mouse-event source) every frame,
+                  // before boundBoxFunc reads it -- keyboard tracking can go stale when a
+                  // Windows Alt press blurs the window.
+                  if (e) altDownRef.current = e.altKey
+                  // Live grid snap for unlocked resize handles, mirroring the move
+                  // dragBoundFunc. Locked snaps in boundBoxFunc (keepRatio re-projects the
+                  // corner, defeating anchor snapping); Alt bypasses snap and is re-anchored
+                  // in boundBoxFunc.
                   if (backgroundLockAspect || altDownRef.current || !(gridSettings.spacing > 0)) {
                     return newPos
                   }
@@ -1043,54 +1057,63 @@ export function EditorStage() {
                 }}
                 boundBoxFunc={(oldBox, newBox) => {
                   if (newBox.width < 8 || newBox.height < 8) return oldBox
-                  // Locked: snap the uniform resize to the grid here, because keepRatio
-                  // defeats anchorDragBoundFunc. Convert the box to world, reuse the
-                  // (tested) uniform snap, and convert back. boundBoxFunc runs after
-                  // keepRatio, so the snapped box is final. Unlocked already snapped live.
-                  const a = asCornerAnchor(bgActiveAnchorRef.current)
-                  if (
-                    !backgroundLockAspect ||
-                    altDownRef.current ||
-                    !(gridSettings.spacing > 0) ||
-                    !background ||
-                    !a
-                  ) {
-                    return newBox
-                  }
-                  const tl = screenToWorld(vp, newBox.x, newBox.y)
-                  const right = screenToWorld(vp, newBox.x + newBox.width, newBox.y).x
-                  const bottom = screenToWorld(vp, newBox.x, newBox.y + newBox.height).z
+                  if (!background || !(gridSettings.spacing > 0)) return newBox
+                  const anchor = bgActiveAnchorRef.current
                   const dims = {
                     naturalWidth: background.naturalWidth,
                     naturalHeight: background.naturalHeight,
                   }
-                  const snapped = snapResizeToGrid(
-                    {
-                      x: background.x,
-                      z: background.z,
-                      scaleX: background.scaleX,
-                      scaleZ: background.scaleZ,
-                      ...dims,
-                    },
-                    {
-                      x: tl.x,
-                      z: tl.z,
-                      scaleX: (right - tl.x) / dims.naturalWidth,
-                      scaleZ: (tl.z - bottom) / dims.naturalHeight,
-                      ...dims,
-                    },
-                    a,
-                    gridSettings.spacing,
-                  )
-                  if (!snapped) return newBox
-                  const s = worldToScreen(vp, snapped.x, snapped.z)
-                  return {
-                    x: s.sx,
-                    y: s.sy,
-                    width: dims.naturalWidth * snapped.scale * vp.scale,
-                    height: dims.naturalHeight * snapped.scale * vp.scale,
-                    rotation: 0,
+                  const prev = {
+                    x: background.x,
+                    z: background.z,
+                    scaleX: background.scaleX,
+                    scaleZ: background.scaleZ,
+                    ...dims,
                   }
+                  // The box Konva produced as per-axis world scales (these are the
+                  // centered scales when Alt is held).
+                  const left = screenToWorld(vp, newBox.x, newBox.y).x
+                  const right = screenToWorld(vp, newBox.x + newBox.width, newBox.y).x
+                  const top = screenToWorld(vp, newBox.x, newBox.y).z
+                  const bottom = screenToWorld(vp, newBox.x, newBox.y + newBox.height).z
+                  const boxScaleX = (right - left) / dims.naturalWidth
+                  const boxScaleZ = (top - bottom) / dims.naturalHeight
+                  const toBox = (r: { x: number; z: number; scaleX: number; scaleZ: number }) => {
+                    const s = worldToScreen(vp, r.x, r.z)
+                    return {
+                      x: s.sx,
+                      y: s.sy,
+                      width: dims.naturalWidth * r.scaleX * vp.scale,
+                      height: dims.naturalHeight * r.scaleZ * vp.scale,
+                      rotation: 0,
+                    }
+                  }
+                  // Free (Alt): Konva centered the resize -> re-anchor it to the fixed
+                  // corner so Alt only bypasses grid snap (never centers). No snap.
+                  if (altDownRef.current && anchor) {
+                    return toBox(decenterResize(prev, boxScaleX, boxScaleZ, anchor))
+                  }
+                  // Locked + not Alt: snap the uniform resize to the grid here (keepRatio
+                  // defeats anchorDragBoundFunc). boundBoxFunc runs after keepRatio.
+                  const a = asCornerAnchor(anchor)
+                  if (backgroundLockAspect && a) {
+                    const snapped = snapResizeToGrid(
+                      prev,
+                      { x: left, z: top, scaleX: boxScaleX, scaleZ: boxScaleZ, ...dims },
+                      a,
+                      gridSettings.spacing,
+                    )
+                    if (snapped) {
+                      return toBox({
+                        x: snapped.x,
+                        z: snapped.z,
+                        scaleX: snapped.scale,
+                        scaleZ: snapped.scale,
+                      })
+                    }
+                  }
+                  // Unlocked + not Alt already snapped live via anchorDragBoundFunc.
+                  return newBox
                 }}
               />
             </Layer>
