@@ -133,4 +133,21 @@ describe('settingsStore', () => {
     expect(loaded!.grid.spacing).toBe(defaultGrid().spacing)
     expect(loaded!.grid.lineColor).toBe('#abcdef')
   })
+
+  test('loadSettings backfills grid.majorColor and grid.majorWidth for pre-major-line persisted settings', () => {
+    // A blob predating the major-line fields. The backfill merge in loadSettings
+    // should attach the defaults while preserving the user's lineColor.
+    const legacy = {
+      grid: { lineColor: '#abcdef', lineWidth: 2, show: true, spacing: 25_000 },
+      point: defaultPoint(),
+      line: defaultLine(),
+      materials: [],
+    }
+    localStorage.setItem('poly-forge:settings:v1', JSON.stringify(legacy))
+    const loaded = loadSettings()
+    expect(loaded).not.toBeNull()
+    expect(loaded!.grid.lineColor).toBe('#abcdef')
+    expect(loaded!.grid.majorColor).toBe(defaultGrid().majorColor)
+    expect(loaded!.grid.majorWidth).toBe(defaultGrid().majorWidth)
+  })
 })

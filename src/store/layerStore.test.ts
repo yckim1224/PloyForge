@@ -17,22 +17,23 @@ beforeEach(() => {
 })
 
 describe('layerStore', () => {
-  test("default visibility is grid on and points/lines/faces 'on'", () => {
+  test("default visibility is all 'on'", () => {
     const s = useLayerStore.getState()
-    expect(s.grid).toBe(true)
+    expect(s.grid).toBe('on')
     expect(s.points).toBe('on')
     expect(s.lines).toBe('on')
     expect(s.faces).toBe('on')
   })
 
-  test('toggle on grid flips the boolean', () => {
+  test('toggle cycles every layer through on -> labeled -> off -> on, including grid', () => {
+    expect(useLayerStore.getState().grid).toBe('on')
     useLayerStore.getState().toggle('grid')
-    expect(useLayerStore.getState().grid).toBe(false)
+    expect(useLayerStore.getState().grid).toBe('labeled')
     useLayerStore.getState().toggle('grid')
-    expect(useLayerStore.getState().grid).toBe(true)
-  })
+    expect(useLayerStore.getState().grid).toBe('off')
+    useLayerStore.getState().toggle('grid')
+    expect(useLayerStore.getState().grid).toBe('on')
 
-  test('toggle on a tri-state layer cycles on -> labeled -> off -> on', () => {
     expect(useLayerStore.getState().points).toBe('on')
     useLayerStore.getState().toggle('points')
     expect(useLayerStore.getState().points).toBe('labeled')
@@ -45,38 +46,40 @@ describe('layerStore', () => {
   test('setAll(false) hides everything; setAll(true) restores to on', () => {
     useLayerStore.getState().setAll(false)
     const s = useLayerStore.getState()
-    expect(s.grid).toBe(false)
+    expect(s.grid).toBe('off')
     expect(s.points).toBe('off')
     expect(s.lines).toBe('off')
     expect(s.faces).toBe('off')
     useLayerStore.getState().setAll(true)
     const t = useLayerStore.getState()
-    expect(t.grid).toBe(true)
+    expect(t.grid).toBe('on')
     expect(t.points).toBe('on')
     expect(t.lines).toBe('on')
     expect(t.faces).toBe('on')
   })
 
-  test('setLayer accepts boolean for grid and LayerMode for the rest', () => {
-    useLayerStore.getState().setLayer('grid', false)
-    expect(useLayerStore.getState().grid).toBe(false)
+  test('setLayer accepts a LayerMode for every layer including grid', () => {
+    useLayerStore.getState().setLayer('grid', 'labeled')
+    expect(useLayerStore.getState().grid).toBe('labeled')
+    useLayerStore.getState().setLayer('grid', 'off')
+    expect(useLayerStore.getState().grid).toBe('off')
     useLayerStore.getState().setLayer('points', 'labeled')
     expect(useLayerStore.getState().points).toBe('labeled')
   })
 
   test('round-trips a tri-state shape through localStorage', () => {
-    saveLayerVisibility({ grid: false, points: 'labeled', lines: 'off', faces: 'on' })
+    saveLayerVisibility({ grid: 'labeled', points: 'labeled', lines: 'off', faces: 'on' })
     const v = loadLayerVisibility()
-    expect(v).toEqual({ grid: false, points: 'labeled', lines: 'off', faces: 'on' })
+    expect(v).toEqual({ grid: 'labeled', points: 'labeled', lines: 'off', faces: 'on' })
   })
 
-  test('migrates the pre-tri-state all-boolean shape on load', () => {
+  test('migrates the pre-tri-state all-boolean shape on load, including grid', () => {
     localStorage.setItem(
       'poly-forge:layers:v1',
       JSON.stringify({ grid: false, points: true, lines: false, faces: true }),
     )
     expect(loadLayerVisibility()).toEqual({
-      grid: false,
+      grid: 'off',
       points: 'on',
       lines: 'off',
       faces: 'on',
@@ -86,11 +89,11 @@ describe('layerStore', () => {
   test('rejects malformed persisted values', () => {
     localStorage.setItem('poly-forge:layers:v1', '"not an object"')
     expect(loadLayerVisibility()).toBeNull()
-    localStorage.setItem('poly-forge:layers:v1', '{"grid":true}')
+    localStorage.setItem('poly-forge:layers:v1', '{"grid":"on"}')
     expect(loadLayerVisibility()).toBeNull()
     localStorage.setItem(
       'poly-forge:layers:v1',
-      JSON.stringify({ grid: true, points: 'sometimes', lines: 'on', faces: 'on' }),
+      JSON.stringify({ grid: 'on', points: 'sometimes', lines: 'on', faces: 'on' }),
     )
     expect(loadLayerVisibility()).toBeNull()
   })

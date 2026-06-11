@@ -2,11 +2,11 @@ import { create } from 'zustand'
 
 export type LayerKey = 'grid' | 'points' | 'lines' | 'faces'
 
-/** Grid is on/off only; points/lines/faces add a 'labeled' mode that overlays IDs. */
+/** All layers share an off/on/labeled cycle; `labeled` overlays IDs or values. */
 export type LayerMode = 'off' | 'on' | 'labeled'
 
 export interface LayerVisibility {
-  grid: boolean
+  grid: LayerMode
   points: LayerMode
   lines: LayerMode
   faces: LayerMode
@@ -14,10 +14,7 @@ export interface LayerVisibility {
 
 export interface LayerState extends LayerVisibility {
   toggle: (layer: LayerKey) => void
-  setLayer: {
-    (layer: 'grid', visible: boolean): void
-    (layer: 'points' | 'lines' | 'faces', mode: LayerMode): void
-  }
+  setLayer: (layer: LayerKey, mode: LayerMode) => void
   setAll: (visible: boolean) => void
   hydrate: (v: LayerVisibility) => void
 }
@@ -27,12 +24,12 @@ const STORAGE_KEY = 'poly-forge:layers:v1'
 const CYCLE: Record<LayerMode, LayerMode> = { off: 'on', on: 'labeled', labeled: 'off' }
 
 export function defaultLayerVisibility(): LayerVisibility {
-  return { grid: true, points: 'on', lines: 'on', faces: 'on' }
+  return { grid: 'on', points: 'on', lines: 'on', faces: 'on' }
 }
 
 function coerceMode(v: unknown): LayerMode | null {
   if (v === 'off' || v === 'on' || v === 'labeled') return v
-  // Migration: pre-tri-state shape had booleans for every key.
+  // Migration: pre-tri-state shape stored a plain boolean per key.
   if (typeof v === 'boolean') return v ? 'on' : 'off'
   return null
 }
@@ -44,12 +41,12 @@ export function loadLayerVisibility(): LayerVisibility | null {
     const parsed = JSON.parse(raw) as unknown
     if (!parsed || typeof parsed !== 'object') return null
     const o = parsed as Record<string, unknown>
-    if (typeof o.grid !== 'boolean') return null
+    const grid = coerceMode(o.grid)
     const points = coerceMode(o.points)
     const lines = coerceMode(o.lines)
     const faces = coerceMode(o.faces)
-    if (!points || !lines || !faces) return null
-    return { grid: o.grid, points, lines, faces }
+    if (!grid || !points || !lines || !faces) return null
+    return { grid, points, lines, faces }
   } catch {
     return null
   }
@@ -67,18 +64,11 @@ export const useLayerStore = create<LayerState>((set) => ({
   ...defaultLayerVisibility(),
 
   toggle: (layer) =>
-    set((s) => {
-      if (layer === 'grid') return { grid: !s.grid }
-      return { [layer]: CYCLE[s[layer]] } as Partial<LayerVisibility>
-    }),
-  setLayer: ((layer: LayerKey, value: boolean | LayerMode) =>
-    set({ [layer]: value } as Partial<LayerVisibility>)) as LayerState['setLayer'],
-  setAll: (visible) =>
-    set({
-      grid: visible,
-      points: visible ? 'on' : 'off',
-      lines: visible ? 'on' : 'off',
-      faces: visible ? 'on' : 'off',
-    }),
+    set((s) => ({ [layer]: CYCLE[s[layer]] }) as Partial<LayerVisibility>),
+  setLayer: (layer, mode) => set({ [layer]: mode } as Partial<LayerVisibility>),
+  setAll: (visible) => {
+    const mode: LayerMode = visible ? 'on' : 'off'
+    set({ grid: mode, points: mode, lines: mode, faces: mode })
+  },
   hydrate: (v) => set({ grid: v.grid, points: v.points, lines: v.lines, faces: v.faces }),
 }))

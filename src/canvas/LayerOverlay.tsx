@@ -35,7 +35,7 @@ export function LayerOverlay() {
     setBackgroundVisible(false)
   }
 
-  const state: Record<LayerKey, boolean | LayerMode> = { grid, points, lines, faces }
+  const state: Record<LayerKey, LayerMode> = { grid, points, lines, faces }
 
   return (
     <div
@@ -64,12 +64,9 @@ export function LayerOverlay() {
       <div className="my-0.5 h-px bg-neutral-200" />
       {LAYERS.map(({ id, label, Icon }) => {
         const v = state[id]
-        const off = v === false || v === 'off'
+        const off = v === 'off'
         const labeled = v === 'labeled'
-        const title =
-          id === 'grid'
-            ? `Toggle ${label}`
-            : `Toggle ${label} (${modeLabel(v as LayerMode)})`
+        const title = `Toggle ${label} (${modeLabel(v)})`
         return (
           <button
             key={id}

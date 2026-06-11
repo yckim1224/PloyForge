@@ -168,6 +168,19 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               width="w-20"
             />
           </Field>
+          <Field label="Major line color (every 10)">
+            <ColorCell value={grid.majorColor} onChange={(v) => setGrid({ majorColor: v })} />
+          </Field>
+          <Field label="Major line width (px)">
+            <NumberCell
+              value={grid.majorWidth}
+              onCommit={(v) => {
+                if (v > 0) setGrid({ majorWidth: v })
+              }}
+              step="0.5"
+              width="w-20"
+            />
+          </Field>
           <Field label="Show grid">
             <input
               type="checkbox"

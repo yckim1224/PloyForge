@@ -19,7 +19,7 @@ import { Tooltip } from '../components/Tooltip'
 import { LayerOverlay } from './LayerOverlay'
 import { HelpContent } from './HelpContent'
 import { Crosshair, HelpCircle } from 'lucide-react'
-import { computeGridLines } from './grid'
+import { computeGridLabels, computeGridLines } from './grid'
 import {
   arrowPanDelta,
   fitPoints,
@@ -47,6 +47,12 @@ import {
 
 const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
+/** Grid-axis label styling (used when the grid layer is in 'labeled' mode). */
+const GRID_LABEL_FONT_SIZE = 11
+const GRID_LABEL_PAD_PX = 4
+const GRID_LABEL_COLOR = '#475569'
+/** Bottom-left x-coordinate below which we skip x-labels to avoid the HUD chip. */
+const GRID_LABEL_HUD_RESERVE_PX = 140
 /** Per-keypress view pan step (px) for arrow keys when nothing is selected. */
 const ARROW_PAN_PX = 40
 const ARROW_PAN_LARGE_PX = 200
@@ -691,6 +697,10 @@ export function EditorStage() {
   }
 
   const gridLines = computeGridLines(vp, size.w, size.h, gridSettings.spacing)
+  const gridLabels =
+    layerGrid === 'labeled'
+      ? computeGridLabels(vp, size.w, size.h, gridSettings.spacing)
+      : []
   const colorOf = (mattype: number) =>
     materials.find((m) => m.mattype === mattype)?.color ?? materialColor(mattype)
 
@@ -762,16 +772,51 @@ export function EditorStage() {
             </Layer>
           )}
 
-          {gridSettings.show && layerGrid && (
+          {gridSettings.show && layerGrid !== 'off' && (
             <Layer listening={false}>
-              {gridLines.map((l, i) => (
-                <Line
-                  key={i}
-                  points={l.points}
-                  stroke={l.axis ? '#9ca3af' : gridSettings.lineColor}
-                  strokeWidth={l.axis ? Math.max(1.2, gridSettings.lineWidth) : gridSettings.lineWidth}
-                />
-              ))}
+              {gridLines.map((l, i) => {
+                const stroke = l.axis
+                  ? '#9ca3af'
+                  : l.major
+                    ? gridSettings.majorColor
+                    : gridSettings.lineColor
+                const strokeWidth = l.axis
+                  ? Math.max(1.2, gridSettings.lineWidth)
+                  : l.major
+                    ? gridSettings.majorWidth
+                    : gridSettings.lineWidth
+                return <Line key={i} points={l.points} stroke={stroke} strokeWidth={strokeWidth} />
+              })}
+            </Layer>
+          )}
+          {gridSettings.show && layerGrid === 'labeled' && gridLabels.length > 0 && (
+            <Layer listening={false}>
+              {gridLabels.map((lb, i) => {
+                if (lb.kind === 'x') {
+                  // Bottom-pinned X-axis label; skip if it would collide with the HUD chip.
+                  if (lb.screenPos < GRID_LABEL_HUD_RESERVE_PX) return null
+                  return (
+                    <Text
+                      key={`gx-${i}`}
+                      x={lb.screenPos - lb.text.length * 3}
+                      y={size.h - GRID_LABEL_FONT_SIZE - GRID_LABEL_PAD_PX}
+                      text={lb.text}
+                      fontSize={GRID_LABEL_FONT_SIZE}
+                      fill={GRID_LABEL_COLOR}
+                    />
+                  )
+                }
+                return (
+                  <Text
+                    key={`gz-${i}`}
+                    x={GRID_LABEL_PAD_PX}
+                    y={lb.screenPos - GRID_LABEL_FONT_SIZE / 2}
+                    text={lb.text}
+                    fontSize={GRID_LABEL_FONT_SIZE}
+                    fill={GRID_LABEL_COLOR}
+                  />
+                )
+              })}
             </Layer>
           )}
 

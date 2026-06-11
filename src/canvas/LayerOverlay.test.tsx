@@ -23,14 +23,24 @@ describe('LayerOverlay', () => {
     expect(screen.getByLabelText('Toggle Faces').getAttribute('aria-pressed')).toBe('true')
   })
 
-  test('clicking the grid toggle flips its boolean visibility', () => {
+  test('clicking the grid toggle cycles on -> labeled -> off and shows an A badge in labeled mode', () => {
     render(<LayerOverlay />)
     const grid = screen.getByLabelText('Toggle Grid')
+    // on -> labeled
     fireEvent.click(grid)
-    expect(grid.getAttribute('aria-pressed')).toBe('false')
-    expect(useLayerStore.getState().grid).toBe(false)
-    fireEvent.click(grid)
+    expect(useLayerStore.getState().grid).toBe('labeled')
     expect(grid.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByTestId('label-badge-grid')).toBeTruthy()
+    // labeled -> off
+    fireEvent.click(grid)
+    expect(useLayerStore.getState().grid).toBe('off')
+    expect(grid.getAttribute('aria-pressed')).toBe('false')
+    expect(screen.queryByTestId('label-badge-grid')).toBeNull()
+    // off -> on
+    fireEvent.click(grid)
+    expect(useLayerStore.getState().grid).toBe('on')
+    expect(grid.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.queryByTestId('label-badge-grid')).toBeNull()
   })
 
   test('clicking a tri-state toggle cycles on -> labeled -> off and shows an A badge in labeled mode', () => {
@@ -57,13 +67,13 @@ describe('LayerOverlay', () => {
     render(<LayerOverlay />)
     fireEvent.click(screen.getByLabelText('Hide all layers'))
     const s = useLayerStore.getState()
-    expect(s.grid).toBe(false)
+    expect(s.grid).toBe('off')
     expect(s.points).toBe('off')
     expect(s.lines).toBe('off')
     expect(s.faces).toBe('off')
     fireEvent.click(screen.getByLabelText('Show all layers'))
     const s2 = useLayerStore.getState()
-    expect(s2.grid).toBe(true)
+    expect(s2.grid).toBe('on')
     expect(s2.points).toBe('on')
     expect(s2.lines).toBe('on')
     expect(s2.faces).toBe('on')

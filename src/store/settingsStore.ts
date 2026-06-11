@@ -12,7 +12,11 @@ export type BoundaryFlagKey = 0 | 1 | 2 | 16 | 32
 
 export interface GridSettings {
   lineColor: string
+  /** Color for the major (every 10th) grid lines. Slightly darker than `lineColor`. */
+  majorColor: string
   lineWidth: number
+  /** Major (every 10th) line width in pixels. Independent of `lineWidth`. */
+  majorWidth: number
   show: boolean
   /** Snap-grid spacing in meters (also used for arrow-key nudge step). */
   spacing: number
@@ -59,7 +63,9 @@ const STORAGE_KEY = 'poly-forge:settings:v1'
 export function defaultGrid(): GridSettings {
   return {
     lineColor: '#e5e7eb',
+    majorColor: '#cbd5e1',
     lineWidth: 1,
+    majorWidth: 1.5,
     show: true,
     spacing: 25_000,
   }
