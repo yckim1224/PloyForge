@@ -115,7 +115,7 @@ export function BackgroundSection() {
               onChange={(e) => useEditorStore.getState().setBackgroundLockAspect(e.target.checked)}
               className="size-3.5 shrink-0 accent-violet-600"
             />
-            Lock aspect ratio
+            Lock initial aspect ratio
           </label>
 
           <div className="flex flex-col gap-1">
