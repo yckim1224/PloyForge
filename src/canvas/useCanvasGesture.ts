@@ -33,7 +33,8 @@ import {
 import { exceededDragThreshold, isDraggableTarget, snapDelta } from './drag'
 
 const HIT_PX = 12
-const HUD_EMPTY = 'x —   z —'
+/** Placeholder shown until the first cursor move writes real coordinates. */
+export const HUD_EMPTY = 'x —   z —'
 
 function formatHud(x: number, z: number, scale: number): string {
   const meters = (v: number) => Math.round(v).toLocaleString('en-US')

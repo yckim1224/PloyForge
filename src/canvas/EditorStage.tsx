@@ -14,10 +14,8 @@ import { Crosshair, HelpCircle } from 'lucide-react'
 import { computeGridLabels, computeGridLines } from './grid'
 import { fitPoints, worldToScreen, type Viewport } from './viewport'
 import { useKeyboardShortcuts } from './useKeyboardShortcuts'
-import { useCanvasGesture } from './useCanvasGesture'
+import { HUD_EMPTY, useCanvasGesture } from './useCanvasGesture'
 import { BackgroundImageEditor } from './BackgroundImageEditor'
-
-const HUD_EMPTY = 'x —   z —'
 /** Grid-axis label styling (used when the grid layer is in 'labeled' mode). */
 const GRID_LABEL_FONT_SIZE = 11
 const GRID_LABEL_PAD_PX = 4
