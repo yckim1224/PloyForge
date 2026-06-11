@@ -1,6 +1,6 @@
 import type { PolyDocument } from '../types'
 import { detectFaces } from './faces'
-import { interiorPoint, type Vec2 } from '../lib/geometry'
+import { facePointsToVecs, interiorPoint } from '../lib/geometry'
 
 /** Format a number for .poly output: shortest round-trippable decimal, no negative zero. */
 function fmt(v: number): string {
@@ -70,10 +70,7 @@ export function serializePoly(doc: PolyDocument, opts: SerializeOptions = {}): S
   out.push(`${faces.length}`)
   out.push('# k xk zk mattype size')
   faces.forEach((face, k) => {
-    const verts: Vec2[] = face.pointIds
-      .map((pid) => pointById.get(pid))
-      .filter((p): p is NonNullable<typeof p> => Boolean(p))
-      .map((p) => ({ x: p.x, z: p.z }))
+    const verts = facePointsToVecs(face.pointIds, pointById)
     const seed = interiorPoint(verts)
     const spec = faceTypes[face.id]
     const mattype = spec?.mattype ?? 0

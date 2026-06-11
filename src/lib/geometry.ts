@@ -1,9 +1,23 @@
 // Planar geometry helpers operating in world coordinates (x, z).
 // turf.area assumes geographic coordinates, so we compute planar area ourselves.
 
+import type { Point } from '../types'
+
 export interface Vec2 {
   x: number
   z: number
+}
+
+/**
+ * Resolve a face's `pointIds` against the point map and project to bare {x,z}
+ * vertices, dropping any id that no longer exists. Shared by parse/serialize/
+ * canvas render so the resolution behavior stays in one place.
+ */
+export function facePointsToVecs(pointIds: string[], pointById: Map<string, Point>): Vec2[] {
+  return pointIds
+    .map((pid) => pointById.get(pid))
+    .filter((p): p is Point => p !== undefined)
+    .map((p) => ({ x: p.x, z: p.z }))
 }
 
 /** Signed polygon area via the shoelace formula (positive = counter-clockwise). */

@@ -1,7 +1,7 @@
 import type { Line, Point, PolyDocument } from '../types'
 import { uid } from '../lib/id'
 import { detectFaces } from './faces'
-import { pointInPolygon, type Vec2 } from '../lib/geometry'
+import { facePointsToVecs, pointInPolygon, type Vec2 } from '../lib/geometry'
 
 export interface ParseResult {
   doc: PolyDocument
@@ -140,12 +140,7 @@ export function parsePoly(text: string): ParseResult {
   // the same face -> last one wins (plus warning).
   const faces = detectFaces(points, lines)
   const pointById = new Map(points.map((p) => [p.id, p]))
-  const faceVerts: Vec2[][] = faces.map((f) =>
-    f.pointIds
-      .map((pid) => pointById.get(pid))
-      .filter((p): p is NonNullable<typeof p> => Boolean(p))
-      .map((p) => ({ x: p.x, z: p.z })),
-  )
+  const faceVerts: Vec2[][] = faces.map((f) => facePointsToVecs(f.pointIds, pointById))
   const faceTypes: PolyDocument['faceTypes'] = {}
   for (const r of parsedRegions) {
     let matchedIndex = -1

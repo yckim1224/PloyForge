@@ -6,6 +6,8 @@ import { InputModal } from '../components/InputModal'
 import { useEditorStore } from '../store/editorStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { materialColor } from '../constants/materials'
+import { parseNonNegativeIntOrNull } from '../lib/parsers'
+import { usePointIndex } from '../lib/usePointIndex'
 import type { Face } from '../types'
 
 const PATHS_MAX = 8
@@ -16,13 +18,6 @@ function formatPaths(face: Face, pointIndex: Map<string, number>): string {
   return `${indices.slice(0, PATHS_MAX).join('→')}…`
 }
 
-function parseIntOrNull(raw: string): number | null {
-  if (raw.trim() === '') return null
-  const n = Number(raw)
-  if (!Number.isInteger(n) || n < 0) return null
-  return n
-}
-
 export function FacesSection() {
   const faces = useEditorStore((s) => s.faces)
   const points = useEditorStore((s) => s.points)
@@ -31,11 +26,7 @@ export function FacesSection() {
   const [setTypeModal, setSetTypeModal] = useState(false)
 
   const selectedIds = useMemo(() => new Set(faceIds), [faceIds])
-  const pointIndex = useMemo(() => {
-    const m = new Map<string, number>()
-    points.forEach((p, i) => m.set(p.id, i))
-    return m
-  }, [points])
+  const pointIndex = usePointIndex(points)
 
   const columns: Column<Face>[] = useMemo(() => {
     const colorFor = (m: number | undefined): string => {
@@ -73,7 +64,7 @@ export function FacesSection() {
         edit: {
           type: 'number',
           allowEmpty: true,
-          parse: parseIntOrNull,
+          parse: parseNonNegativeIntOrNull,
           seed: (f) => (f.mattype === undefined ? '' : String(f.mattype)),
           onCommit: (f, _idx, v) => {
             const size = f.size ?? -1

@@ -13,7 +13,7 @@ import { useSettingsStore } from '../store/settingsStore'
 import { useLayerStore } from '../store/layerStore'
 import { toast } from '../store/toastStore'
 import { materialColor } from '../constants/materials'
-import { type Vec2 } from '../lib/geometry'
+import { facePointsToVecs, type Vec2 } from '../lib/geometry'
 import { Toolbar } from '../components/Toolbar'
 import { Tooltip } from '../components/Tooltip'
 import { LayerOverlay } from './LayerOverlay'
@@ -708,11 +708,7 @@ export function EditorStage() {
   const selLines = new Set(selection.lineIds)
   const selFaces = new Set(selection.faceIds)
 
-  const faceVerts = (pointIds: string[]): Vec2[] =>
-    pointIds
-      .map((pid) => byId.get(pid))
-      .filter((p): p is NonNullable<typeof p> => Boolean(p))
-      .map((p) => ({ x: p.x, z: p.z }))
+  const faceVerts = (pointIds: string[]): Vec2[] => facePointsToVecs(pointIds, byId)
 
   const lineStyleFor = (flag: number) => {
     const key = flag as 0 | 1 | 2 | 16 | 32

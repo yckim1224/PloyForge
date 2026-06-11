@@ -7,20 +7,8 @@ import { SelectionBar } from '../components/SelectionBar'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { Menu } from '../components/Menu'
 import { useEditorStore } from '../store/editorStore'
+import { parseFloatOrNull, parseIntOrNull } from '../lib/parsers'
 import type { Point } from '../types'
-
-function parseFloatOrNull(raw: string): number | null {
-  if (raw.trim() === '') return null
-  const n = Number(raw)
-  return Number.isFinite(n) ? n : null
-}
-
-function parseIntOrNull(raw: string): number | null {
-  if (raw.trim() === '') return null
-  const n = Number(raw)
-  if (!Number.isInteger(n)) return null
-  return n
-}
 
 const ADD_FIELDS: AddRowField[] = [
   {

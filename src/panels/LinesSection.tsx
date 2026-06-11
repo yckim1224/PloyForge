@@ -10,6 +10,8 @@ import { Menu } from '../components/Menu'
 import { useEditorStore } from '../store/editorStore'
 import { useSettingsStore, type BoundaryFlagKey } from '../store/settingsStore'
 import { BOUNDARY_OPTIONS_2D } from '../poly/boundary'
+import { parseIntOrNull } from '../lib/parsers'
+import { usePointIndex } from '../lib/usePointIndex'
 import type { Line } from '../types'
 
 /** Short label per boundary flag value. */
@@ -29,13 +31,6 @@ function BfCell({ bf }: { bf: number }) {
   )
 }
 
-function parseIntOrNull(raw: string): number | null {
-  if (raw.trim() === '') return null
-  const n = Number(raw)
-  if (!Number.isInteger(n)) return null
-  return n
-}
-
 const BF_OPTIONS: ColumnEditOption[] = BOUNDARY_OPTIONS_2D.map((o) => ({
   label: o.value === 0 ? 'Internal (0)' : `${o.short} (${o.value})`,
   value: o.value,
@@ -52,11 +47,7 @@ export function LinesSection() {
   const [bfModal, setBfModal] = useState(false)
 
   // P0/P1 are stored as point uids; render the *display* index (array slot).
-  const pointIndex = useMemo(() => {
-    const m = new Map<string, number>()
-    points.forEach((p, i) => m.set(p.id, i))
-    return m
-  }, [points])
+  const pointIndex = usePointIndex(points)
 
   const indexToId = (idx: number): string | null => {
     if (!Number.isInteger(idx) || idx < 0 || idx >= points.length) return null
