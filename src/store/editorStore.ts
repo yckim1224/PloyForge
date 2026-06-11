@@ -319,6 +319,9 @@ export const useEditorStore = create<EditorState>()(
     const dx = dirX * step
     const dz = dirZ * step
     set((st) => ({ points: translatePoints(st.points, movePts, dx, dz) }))
+    // A nudge can land a point on an existing segment's interior; renode before
+    // recompute so the T-junction splits and face detection sees the new graph.
+    get().renode()
     get().recomputeFaces()
   },
 

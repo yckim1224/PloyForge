@@ -275,6 +275,21 @@ describe('editorStore', () => {
     expect(store().points.find((p) => p.id === b)).toMatchObject({ x: 200, z: -100 })
   })
 
+  test('nudgeSelection nodes when a point lands on an existing segment interior', () => {
+    useSettingsStore.getState().setGrid({ spacing: 50 })
+    const a = store().addPoint(0, 0)
+    const b = store().addPoint(100, 0)
+    store().addLine(a, b)
+    const c = store().addPoint(50, -50) // off the segment
+    expect(store().lines.length).toBe(1)
+    store().selectSingle('point', c)
+    store().nudgeSelection(0, 1, 'normal') // up by spacing(50): (50, 0), on a-b interior
+    // a-b must now be split into a-c and c-b.
+    expect(store().lines.length).toBe(2)
+    const incidentToC = store().lines.filter((s) => s.p0 === c || s.p1 === c)
+    expect(incidentToC.length).toBe(2)
+  })
+
   test('nudgeSelection is a no-op without a selection', () => {
     useSettingsStore.getState().setGrid({ spacing: 100 })
     const a = store().addPoint(0, 0)
