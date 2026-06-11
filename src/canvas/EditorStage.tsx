@@ -29,7 +29,7 @@ import {
   zoomAt,
   type Viewport,
 } from './viewport'
-import { nearestGridIntersection, nearestLinePoint, nearestPoint, snapWorld } from './snapping'
+import { snapPointTarget } from './snapping'
 import {
   facesInRect,
   linesInRect,
@@ -83,15 +83,12 @@ function StageActions({ onFit }: { onFit: () => void }) {
   )
 }
 
-function fmtMeters(v: number): string {
-  return Math.round(v).toLocaleString('en-US')
-}
-function fmtScale(scale: number): string {
-  const mpp = scale > 0 ? 1 / scale : 0
-  return mpp >= 1 ? `${Math.round(mpp).toLocaleString('en-US')} m/px` : `${mpp.toFixed(2)} m/px`
-}
 function formatHud(x: number, z: number, scale: number): string {
-  return `x ${fmtMeters(x)}   z ${fmtMeters(z)}   ·   ${fmtScale(scale)}`
+  const meters = (v: number) => Math.round(v).toLocaleString('en-US')
+  const mpp = scale > 0 ? 1 / scale : 0
+  const scaleStr =
+    mpp >= 1 ? `${Math.round(mpp).toLocaleString('en-US')} m/px` : `${mpp.toFixed(2)} m/px`
+  return `x ${meters(x)}   z ${meters(z)}   ·   ${scaleStr}`
 }
 
 interface Hover {
@@ -513,31 +510,8 @@ export function EditorStage() {
     }
   }
 
-  // Snap priority for placing a point:
-  //   1. existing vertex (always wins)
-  //   2. grid intersection within HIT_PX (beats line snap so a user trying to
-  //      drop a node at a grid+line crossing actually lands on the grid point)
-  //   3. point on an edge
-  //   4. free grid snap (always rounds to nearest intersection)
-  // Holding Alt bypasses every snap so the user can place at the exact cursor.
-  const resolveTarget = (
-    px: number,
-    py: number,
-    altKey: boolean,
-  ): { x: number; z: number; existingId?: string } => {
-    if (altKey) {
-      const w = screenToWorld(vp, px, py)
-      return { x: w.x, z: w.z }
-    }
-    const existing = nearestPoint(points, vp, px, py, HIT_PX)
-    if (existing) return { x: existing.x, z: existing.z, existingId: existing.id }
-    const onGrid = nearestGridIntersection(vp, px, py, gridSettings.spacing, HIT_PX)
-    if (onGrid) return onGrid
-    const onSeg = nearestLinePoint(lines, points, vp, px, py, HIT_PX)
-    if (onSeg) return onSeg
-    const w = screenToWorld(vp, px, py)
-    return snapWorld(w.x, w.z, gridSettings.spacing)
-  }
+  const resolveTarget = (px: number, py: number, altKey: boolean) =>
+    snapPointTarget(points, lines, vp, px, py, gridSettings.spacing, HIT_PX, altKey)
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const p = e.target.getStage()?.getPointerPosition()
