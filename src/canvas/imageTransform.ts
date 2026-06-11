@@ -211,6 +211,31 @@ export function resolveResize(
   return snapResizeNonUniform(prev, raw, spacing)
 }
 
+/** Which representation the panel's scale fields accept: meters-per-pixel or meters. */
+export type ScaleInputMode = 'ratio' | 'size'
+
+/**
+ * Compute the `{scaleX, scaleZ}` patch for a single panel scale edit. In `ratio`
+ * mode the entered value is meters-per-pixel directly; in `size` mode it is the
+ * axis span in meters, converted via the natural pixel dimension
+ * (`scale = meters / naturalDim`). When `lock` is set, both axes take the same
+ * scale (uniform / undistorted), so editing one axis drives the other. Returns
+ * null when the value is non-positive (caller skips the update).
+ */
+export function scalePatchFromInput(
+  bg: { scaleX: number; scaleZ: number; naturalWidth: number; naturalHeight: number },
+  axis: 'x' | 'z',
+  value: number,
+  mode: ScaleInputMode,
+  lock: boolean,
+): { scaleX: number; scaleZ: number } | null {
+  const naturalDim = axis === 'x' ? bg.naturalWidth : bg.naturalHeight
+  const scale = mode === 'size' ? value / naturalDim : value
+  if (!(scale > 0)) return null
+  if (lock) return { scaleX: scale, scaleZ: scale }
+  return axis === 'x' ? { scaleX: scale, scaleZ: bg.scaleZ } : { scaleX: bg.scaleX, scaleZ: scale }
+}
+
 /**
  * Undo Konva's Alt "centered scaling" for a resize. Konva grows the box
  * symmetrically about its center under Alt (2x the corner displacement); given

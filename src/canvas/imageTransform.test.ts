@@ -3,6 +3,7 @@ import {
   decenterResize,
   nodeRectToWorld,
   resolveResize,
+  scalePatchFromInput,
   snapEdge,
   snapResizeNonUniform,
   snapResizeToGrid,
@@ -177,5 +178,36 @@ describe('decenterResize', () => {
     expect(out.scaleZ).toBe(1000) // z untouched
     expect(out.x).toBe(0)
     expect(out.z).toBe(0)
+  })
+})
+
+describe('scalePatchFromInput', () => {
+  const bg = { scaleX: 1000, scaleZ: 800, naturalWidth: 100, naturalHeight: 50 }
+
+  test('ratio mode, unlocked: sets only the edited axis (m/px verbatim)', () => {
+    expect(scalePatchFromInput(bg, 'x', 1500, 'ratio', false)).toEqual({ scaleX: 1500, scaleZ: 800 })
+    expect(scalePatchFromInput(bg, 'z', 1200, 'ratio', false)).toEqual({ scaleX: 1000, scaleZ: 1200 })
+  })
+
+  test('ratio mode, locked: mirrors the other axis to the same scale', () => {
+    expect(scalePatchFromInput(bg, 'x', 1500, 'ratio', true)).toEqual({ scaleX: 1500, scaleZ: 1500 })
+  })
+
+  test('size mode converts meters to m/px via the natural dimension', () => {
+    // Width 100000 m over 100 px -> 1000 m/px; Z untouched when unlocked.
+    expect(scalePatchFromInput(bg, 'x', 100000, 'size', false)).toEqual({ scaleX: 1000, scaleZ: 800 })
+    // Height 90000 m over 50 px -> 1800 m/px.
+    expect(scalePatchFromInput(bg, 'z', 90000, 'size', false)).toEqual({ scaleX: 1000, scaleZ: 1800 })
+  })
+
+  test('size mode, locked: editing height drives both axes uniform', () => {
+    const out = scalePatchFromInput(bg, 'z', 90000, 'size', true)!
+    expect(out.scaleX).toBe(1800)
+    expect(out.scaleZ).toBe(1800)
+  })
+
+  test('returns null for non-positive values (panel skips the update)', () => {
+    expect(scalePatchFromInput(bg, 'x', 0, 'ratio', false)).toBeNull()
+    expect(scalePatchFromInput(bg, 'x', -5, 'size', true)).toBeNull()
   })
 })

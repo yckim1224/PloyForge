@@ -1,8 +1,9 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { MoreHorizontal, Trash2 } from 'lucide-react'
 import { CollapsibleSection } from '../components/CollapsibleSection'
 import { Menu } from '../components/Menu'
 import { NumberValue } from '../components/fields'
+import { scalePatchFromInput, type ScaleInputMode } from '../canvas/imageTransform'
 import { useEditorStore } from '../store/editorStore'
 
 /**
@@ -16,6 +17,11 @@ export function BackgroundSection() {
   const selected = useEditorStore((s) => s.backgroundSelected)
   const lockAspect = useEditorStore((s) => s.backgroundLockAspect)
   const fileRef = useRef<HTMLInputElement>(null)
+  // How the scale fields below are entered: meters-per-pixel ('ratio', the
+  // stored representation) or absolute span in meters ('size'). UI-only, so it
+  // lives here rather than in a store; the background image itself is not
+  // persisted, so resetting on reload is consistent.
+  const [scaleMode, setScaleMode] = useState<ScaleInputMode>('ratio')
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -95,16 +101,6 @@ export function BackgroundSection() {
               onCommit={(v) => useEditorStore.getState().updateBackground({ z: v })}
             />
             <NumberValue
-              label="Scale X (m/px)"
-              value={background.scaleX}
-              onCommit={(v) => useEditorStore.getState().updateBackground({ scaleX: v })}
-            />
-            <NumberValue
-              label="Scale Z (m/px)"
-              value={background.scaleZ}
-              onCommit={(v) => useEditorStore.getState().updateBackground({ scaleZ: v })}
-            />
-            <NumberValue
               label="Opacity (0–1)"
               value={background.opacity}
               step="0.05"
@@ -119,8 +115,49 @@ export function BackgroundSection() {
               onChange={(e) => useEditorStore.getState().setBackgroundLockAspect(e.target.checked)}
               className="size-3.5 shrink-0 accent-violet-600"
             />
-            Lock aspect ratio (resize)
+            Lock aspect ratio
           </label>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">Scale mode</span>
+            <div className="inline-flex rounded-md border border-neutral-300 p-0.5 dark:border-neutral-700">
+              {(['ratio', 'size'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={scaleMode === m}
+                  onClick={() => setScaleMode(m)}
+                  className={
+                    'flex-1 rounded px-2 py-1 text-xs transition-colors ' +
+                    (scaleMode === m
+                      ? 'bg-violet-600 text-white'
+                      : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800')
+                  }
+                >
+                  {m === 'ratio' ? 'Ratio (m/px)' : 'Size (m)'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <NumberValue
+              label={scaleMode === 'size' ? 'Width (m)' : 'Scale X (m/px)'}
+              value={scaleMode === 'size' ? background.naturalWidth * background.scaleX : background.scaleX}
+              onCommit={(v) => {
+                const patch = scalePatchFromInput(background, 'x', v, scaleMode, lockAspect)
+                if (patch) useEditorStore.getState().updateBackground(patch)
+              }}
+            />
+            <NumberValue
+              label={scaleMode === 'size' ? 'Height (m)' : 'Scale Z (m/px)'}
+              value={scaleMode === 'size' ? background.naturalHeight * background.scaleZ : background.scaleZ}
+              onCommit={(v) => {
+                const patch = scalePatchFromInput(background, 'z', v, scaleMode, lockAspect)
+                if (patch) useEditorStore.getState().updateBackground(patch)
+              }}
+            />
+          </div>
         </div>
       )}
     </CollapsibleSection>
