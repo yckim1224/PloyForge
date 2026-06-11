@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'vitest'
 import {
   collectSelectionPointIds,
   hasGeometry,
+  hasUnsavedWork,
   redoEdit,
   undoEdit,
   useEditorStore,
@@ -29,6 +30,24 @@ describe('editorStore', () => {
     expect(hasGeometry(store())).toBe(true)
     store().removePoints([a])
     expect(hasGeometry(store())).toBe(false)
+  })
+
+  test('hasUnsavedWork also counts a background image (but hasGeometry does not)', () => {
+    expect(hasUnsavedWork(store())).toBe(false)
+    // A background alone is unsaved work a reload would lose, yet it is not the
+    // geometry an import would replace.
+    store().setBackgroundElement({} as unknown as HTMLImageElement, {
+      fileName: 'fig.png',
+      naturalWidth: 200,
+      naturalHeight: 100,
+    })
+    expect(hasUnsavedWork(store())).toBe(true)
+    expect(hasGeometry(store())).toBe(false)
+    store().removeBackground()
+    expect(hasUnsavedWork(store())).toBe(false)
+    // Geometry alone still counts.
+    store().addPoint(0, 0)
+    expect(hasUnsavedWork(store())).toBe(true)
   })
 
   test('addPoint dedupes identical coordinates', () => {

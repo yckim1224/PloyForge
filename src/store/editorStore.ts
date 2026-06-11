@@ -820,13 +820,21 @@ export const useEditorStore = create<EditorState>()(
 )
 
 /**
- * True when the document holds any geometry. This is the single source of
- * truth for "there is unsaved work" -- the document is never persisted, so a
- * separate dirty flag would have nothing to compare against. Shared by the
- * beforeunload guard and the import flow.
+ * True when the document holds any geometry -- the work a `.poly` import would
+ * replace. Used by the import overwrite prompt. The background image is
+ * intentionally excluded here: import does not touch it, so it is not at risk.
  */
 export const hasGeometry = (s: Pick<EditorState, 'points' | 'lines'>): boolean =>
   s.points.length > 0 || s.lines.length > 0
+
+/**
+ * True when there is any in-memory work a reload would lose: document geometry
+ * or a background image (both are unpersisted). Used by the leave (beforeunload)
+ * guard, which must warn about more than just import-replaceable geometry.
+ */
+export const hasUnsavedWork = (
+  s: Pick<EditorState, 'points' | 'lines' | 'background'>,
+): boolean => hasGeometry(s) || s.background !== null
 
 /** Undo the last geometry change and refresh derived faces. */
 export function undoEdit() {

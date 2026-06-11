@@ -7,7 +7,7 @@ import { ConfirmModal } from './components/ConfirmModal'
 import { DropZone } from './components/DropZone'
 import { EditorStage } from './canvas/EditorStage'
 import { ControlPanel } from './panels/ControlPanel'
-import { hasGeometry, redoEdit, undoEdit, useEditorStore } from './store/editorStore'
+import { hasUnsavedWork, redoEdit, undoEdit, useEditorStore } from './store/editorStore'
 import { useImportStore } from './store/importStore'
 import {
   loadSettings,
@@ -158,12 +158,12 @@ function App() {
       }
     })
 
-    // Browser-level confirm when leaving with unsaved geometry. Modern
-    // browsers ignore the returned string and show their own copy ("Changes
-    // you made may not be saved"); preventDefault + returnValue is the
-    // canonical way to opt in.
+    // Browser-level confirm when leaving with unsaved work (geometry or a
+    // background image -- neither is persisted). Modern browsers ignore the
+    // returned string and show their own copy ("Changes you made may not be
+    // saved"); preventDefault + returnValue is the canonical way to opt in.
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!hasGeometry(useEditorStore.getState())) return
+      if (!hasUnsavedWork(useEditorStore.getState())) return
       e.preventDefault()
       e.returnValue = ''
     }
