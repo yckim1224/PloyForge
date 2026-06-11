@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Circle, Image as KonvaImage, Layer, Line, Rect, Stage, Text, Transformer } from 'react-konva'
+import { Circle, Image as KonvaImage, Layer, Line, Rect, Stage, Text } from 'react-konva'
 import type Konva from 'konva'
 import type { BackgroundImage } from '../types'
 import { collectSelectionPointIds, useEditorStore } from '../store/editorStore'
@@ -24,6 +24,7 @@ import {
 } from './viewport'
 import { snapPointTarget } from './snapping'
 import { useKeyboardShortcuts } from './useKeyboardShortcuts'
+import { BackgroundImageEditor } from './BackgroundImageEditor'
 import {
   facesInRect,
   linesInRect,
@@ -32,12 +33,6 @@ import {
   type ScreenRect,
 } from './selection'
 import { exceededDragThreshold, isDraggableTarget, snapDelta } from './drag'
-import {
-  nodeRectToWorld,
-  resolveBoundBox,
-  resolveResize,
-  snapScreenPointToGrid,
-} from './imageTransform'
 
 const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
@@ -134,14 +129,8 @@ export function EditorStage() {
   // delta. Kept in state (not a ref) so the canvas re-renders the offset and so
   // it is never read from a ref during render. null = no active drag.
   const [drag, setDrag] = useState<{ ids: Set<string>; dx: number; dz: number } | null>(null)
-  const bgImageRef = useRef<Konva.Image | null>(null)
-  const bgTransformerRef = useRef<Konva.Transformer | null>(null)
   // Set when an image drag/resize just ended, so the trailing click is swallowed.
   const justImageDragged = useRef(false)
-  // Tracks Alt for grid-snap bypass (dragBoundFunc / Transformer carry no event).
-  const altDownRef = useRef(false)
-  // The corner anchor being dragged during a Transformer resize.
-  const bgActiveAnchorRef = useRef<string | null>(null)
 
   const points = useEditorStore((s) => s.points)
   const lines = useEditorStore((s) => s.lines)
@@ -186,17 +175,9 @@ export function EditorStage() {
   // mouse-editable (drag to move, Transformer handles to resize).
   const bgEditMode =
     background !== null && backgroundVisible && backgroundSelected && tool === 'select'
-  // The image's top-left in screen space, computed once per render and reused by
-  // both the beneath-grid and the on-top edit layers.
+  // The image's top-left in screen space, used by the beneath-grid view layer.
+  // (The edit-mode layer recomputes its own screen position inside the editor.)
   const bgScreen = background ? worldToScreen(vp, background.x, background.z) : null
-  // Refresh the Alt flag from a live pointer event. Konva's dragBoundFunc /
-  // anchorDragBoundFunc / boundBoxFunc carry no React event, so the global
-  // keyboard listener below is the baseline; this keeps it exact per frame when
-  // an event *is* available (a Windows Alt press can blur the window and stale
-  // the keyboard tracker).
-  const syncAltFromEvent = (ev: { altKey: boolean }) => {
-    altDownRef.current = ev.altKey
-  }
 
   useEffect(() => {
     const el = containerRef.current
@@ -263,40 +244,6 @@ export function EditorStage() {
     layerFaces,
     setLayer,
   ])
-
-  // Attach the Transformer to the background image while in edit mode, and
-  // re-measure when the viewport or image geometry changes so the resize
-  // handles track the derived on-screen rect.
-  useEffect(() => {
-    const tr = bgTransformerRef.current
-    if (!tr) return
-    if (bgEditMode && bgImageRef.current) {
-      tr.nodes([bgImageRef.current])
-      tr.forceUpdate()
-    } else {
-      tr.nodes([])
-    }
-    tr.getLayer()?.batchDraw()
-  }, [bgEditMode, background, vp])
-
-  // Track Alt globally so the grid-snap helpers (which run without an event) can
-  // honor the free-move modifier.
-  useEffect(() => {
-    const onAlt = (e: KeyboardEvent) => {
-      altDownRef.current = e.altKey
-    }
-    const onBlur = () => {
-      altDownRef.current = false
-    }
-    window.addEventListener('keydown', onAlt)
-    window.addEventListener('keyup', onAlt)
-    window.addEventListener('blur', onBlur)
-    return () => {
-      window.removeEventListener('keydown', onAlt)
-      window.removeEventListener('keyup', onAlt)
-      window.removeEventListener('blur', onBlur)
-    }
-  }, [])
 
   // During a move drag, render the moved points (and the lines/faces that
   // reference them) offset by the live delta -- no store mutation until drop.
@@ -815,148 +762,17 @@ export function EditorStage() {
           </Layer>
 
           {/* Selected image rides on top so it can be freely dragged/resized. */}
-          {background && bgScreen && bgEditMode && (
-            <Layer>
-              <KonvaImage
-                ref={bgImageRef}
-                name="background"
-                image={background.img}
-                x={bgScreen.sx}
-                y={bgScreen.sy}
-                width={background.naturalWidth * background.scaleX * vp.scale}
-                height={background.naturalHeight * background.scaleZ * vp.scale}
-                opacity={background.opacity}
-                draggable
-                dragBoundFunc={(pos) => {
-                  // Snap the top-left to the grid while dragging; Alt frees it.
-                  if (altDownRef.current || !(gridSettings.spacing > 0)) return pos
-                  return snapScreenPointToGrid(vp, pos, gridSettings.spacing)
-                }}
-                onDragMove={(e) => syncAltFromEvent(e.evt)}
-                onDragEnd={(e) => {
-                  const { x, z } = nodeRectToWorld(
-                    { x: e.target.x(), y: e.target.y(), scaleX: 1, scaleY: 1 },
-                    vp,
-                    background.scaleX,
-                    background.scaleZ,
-                  )
-                  justImageDragged.current = true
-                  updateBackground({ x, z })
-                }}
-                onTransformStart={() => {
-                  bgActiveAnchorRef.current = bgTransformerRef.current?.getActiveAnchor() ?? null
-                }}
-                onTransformEnd={(e) => {
-                  const node = e.target
-                  const raw = nodeRectToWorld(
-                    { x: node.x(), y: node.y(), scaleX: node.scaleX(), scaleY: node.scaleY() },
-                    vp,
-                    background.scaleX,
-                    background.scaleZ,
-                  )
-                  // Reset the node scale: the derived render reproduces the new
-                  // size from scaleX/scaleZ, so leaving it on would double-apply.
-                  node.scaleX(1)
-                  node.scaleY(1)
-                  justImageDragged.current = true
-                  const dims = {
-                    naturalWidth: background.naturalWidth,
-                    naturalHeight: background.naturalHeight,
-                  }
-                  updateBackground(
-                    resolveResize(
-                      {
-                        x: background.x,
-                        z: background.z,
-                        scaleX: background.scaleX,
-                        scaleZ: background.scaleZ,
-                        ...dims,
-                      },
-                      { x: raw.x, z: raw.z, scaleX: raw.scaleX, scaleZ: raw.scaleZ, ...dims },
-                      bgActiveAnchorRef.current,
-                      gridSettings.spacing,
-                      altDownRef.current,
-                      backgroundLockAspect,
-                    ),
-                  )
-                }}
-              />
-              <Transformer
-                ref={bgTransformerRef}
-                rotateEnabled={false}
-                keepRatio={backgroundLockAspect}
-                enabledAnchors={
-                  backgroundLockAspect
-                    ? ['top-left', 'top-right', 'bottom-left', 'bottom-right']
-                    : [
-                        'top-left',
-                        'top-center',
-                        'top-right',
-                        'middle-left',
-                        'middle-right',
-                        'bottom-left',
-                        'bottom-center',
-                        'bottom-right',
-                      ]
-                }
-                anchorDragBoundFunc={(_oldPos, newPos, e) => {
-                  // Sync Alt from Konva's mouse event every frame, before boundBoxFunc
-                  // reads it (keyboard tracking can go stale on a Windows Alt blur).
-                  if (e) syncAltFromEvent(e)
-                  // Live grid snap for unlocked resize handles, mirroring the move
-                  // dragBoundFunc. Locked snaps in boundBoxFunc (keepRatio re-projects the
-                  // corner, defeating anchor snapping); Alt bypasses snap and is re-anchored
-                  // in boundBoxFunc.
-                  if (backgroundLockAspect || altDownRef.current || !(gridSettings.spacing > 0)) {
-                    return newPos
-                  }
-                  return snapScreenPointToGrid(vp, newPos, gridSettings.spacing)
-                }}
-                boundBoxFunc={(oldBox, newBox) => {
-                  if (newBox.width < 8 || newBox.height < 8) return oldBox
-                  if (!background || !(gridSettings.spacing > 0)) return newBox
-                  const dims = {
-                    naturalWidth: background.naturalWidth,
-                    naturalHeight: background.naturalHeight,
-                  }
-                  const prev = {
-                    x: background.x,
-                    z: background.z,
-                    scaleX: background.scaleX,
-                    scaleZ: background.scaleZ,
-                    ...dims,
-                  }
-                  // Convert Konva's screen box to world: the top-left plus the far
-                  // extents give the per-axis box scales (these are the *centered*
-                  // scales when Alt is held).
-                  const tl = screenToWorld(vp, newBox.x, newBox.y)
-                  const right = screenToWorld(vp, newBox.x + newBox.width, newBox.y).x
-                  const bottom = screenToWorld(vp, newBox.x, newBox.y + newBox.height).z
-                  const resolved = resolveBoundBox(
-                    prev,
-                    {
-                      left: tl.x,
-                      top: tl.z,
-                      scaleX: (right - tl.x) / dims.naturalWidth,
-                      scaleZ: (tl.z - bottom) / dims.naturalHeight,
-                    },
-                    bgActiveAnchorRef.current,
-                    gridSettings.spacing,
-                    altDownRef.current,
-                    backgroundLockAspect,
-                  )
-                  if (!resolved) return newBox // unlocked path already snapped live
-                  const s = worldToScreen(vp, resolved.x, resolved.z)
-                  return {
-                    x: s.sx,
-                    y: s.sy,
-                    width: dims.naturalWidth * resolved.scaleX * vp.scale,
-                    height: dims.naturalHeight * resolved.scaleZ * vp.scale,
-                    rotation: 0,
-                  }
-                }}
-              />
-            </Layer>
+          {background && bgEditMode && (
+            <BackgroundImageEditor
+              background={background}
+              vp={vp}
+              gridSpacing={gridSettings.spacing}
+              lockAspect={backgroundLockAspect}
+              onChange={updateBackground}
+              onGestureEnd={() => {
+                justImageDragged.current = true
+              }}
+            />
           )}
         </Stage>
       )}
