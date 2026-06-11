@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Circle, Image as KonvaImage, Layer, Line, Rect, Stage, Text } from 'react-konva'
-import type Konva from 'konva'
 import type { BackgroundImage } from '../types'
-import { collectSelectionPointIds, useEditorStore } from '../store/editorStore'
+import { useEditorStore } from '../store/editorStore'
 import { useSettingsStore } from '../store/settingsStore'
 import { useLayerStore } from '../store/layerStore'
-import { toast } from '../store/toastStore'
 import { materialColor } from '../constants/materials'
 import { facePointsToVecs, type Vec2 } from '../lib/geometry'
 import { Toolbar } from '../components/Toolbar'
@@ -14,27 +12,11 @@ import { LayerOverlay } from './LayerOverlay'
 import { HelpContent } from './HelpContent'
 import { Crosshair, HelpCircle } from 'lucide-react'
 import { computeGridLabels, computeGridLines } from './grid'
-import {
-  fitPoints,
-  panBy,
-  screenToWorld,
-  worldToScreen,
-  zoomAt,
-  type Viewport,
-} from './viewport'
-import { snapPointTarget } from './snapping'
+import { fitPoints, worldToScreen, type Viewport } from './viewport'
 import { useKeyboardShortcuts } from './useKeyboardShortcuts'
+import { useCanvasGesture } from './useCanvasGesture'
 import { BackgroundImageEditor } from './BackgroundImageEditor'
-import {
-  facesInRect,
-  linesInRect,
-  normalizeRect,
-  pointsInRect,
-  type ScreenRect,
-} from './selection'
-import { exceededDragThreshold, isDraggableTarget, snapDelta } from './drag'
 
-const HIT_PX = 12
 const HUD_EMPTY = 'x —   z —'
 /** Grid-axis label styling (used when the grid layer is in 'labeled' mode). */
 const GRID_LABEL_FONT_SIZE = 11
@@ -68,22 +50,6 @@ function StageActions({ onFit }: { onFit: () => void }) {
   )
 }
 
-function formatHud(x: number, z: number, scale: number): string {
-  const meters = (v: number) => Math.round(v).toLocaleString('en-US')
-  const mpp = scale > 0 ? 1 / scale : 0
-  const scaleStr =
-    mpp >= 1 ? `${Math.round(mpp).toLocaleString('en-US')} m/px` : `${mpp.toFixed(2)} m/px`
-  return `x ${meters(x)}   z ${meters(z)}   ·   ${scaleStr}`
-}
-
-interface Hover {
-  sx: number
-  sy: number
-  x: number
-  z: number
-  existingId?: string
-}
-
 /** Two opposite world corners of the background image's bounding box (or none). */
 function backgroundCorners(bg: BackgroundImage | null): { x: number; z: number }[] {
   if (!bg) return []
@@ -93,44 +59,13 @@ function backgroundCorners(bg: BackgroundImage | null): { x: number; z: number }
   ]
 }
 
-/** True when a Konva node is the background image or one of its Transformer handles. */
-function isBackgroundTarget(node: Konva.Node | null): boolean {
-  let n: Konva.Node | null = node
-  while (n) {
-    if (typeof n.name === 'function' && n.name() === 'background') return true
-    if (typeof n.getClassName === 'function' && n.getClassName() === 'Transformer') return true
-    n = typeof n.getParent === 'function' ? n.getParent() : null
-  }
-  return false
-}
-
 export function EditorStage() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [vp, setVp] = useState<Viewport>({ scale: 1, originX: 0, originY: 0 })
-  const [hover, setHover] = useState<Hover | null>(null)
-  const [marquee, setMarquee] = useState<ScreenRect | null>(null)
-  const [spacePan, setSpacePan] = useState(false)
   const didInit = useRef(false)
   const sizeRef = useRef({ w: 0, h: 0 })
-  const panning = useRef<{ x: number; y: number } | null>(null)
   const hudRef = useRef<HTMLDivElement>(null)
-  const marqueeStart = useRef<{ x: number; y: number; target: 'point' | 'line' | 'face' } | null>(
-    null,
-  )
-  const justMarqueed = useRef(false)
-  // Move-drag handler-only bookkeeping: the press point and whether the drag
-  // threshold has been crossed. (Render-facing drag data lives in `drag` state
-  // below.) The store is mutated only once, on drop.
-  const dragStart = useRef<{ x: number; y: number; moved: boolean } | null>(null)
-  // Set when a real drag just ended, so the trailing click is swallowed.
-  const justDragged = useRef(false)
-  // Render-facing drag state: the point ids being moved plus the live world
-  // delta. Kept in state (not a ref) so the canvas re-renders the offset and so
-  // it is never read from a ref during render. null = no active drag.
-  const [drag, setDrag] = useState<{ ids: Set<string>; dx: number; dz: number } | null>(null)
-  // Set when an image drag/resize just ended, so the trailing click is swallowed.
-  const justImageDragged = useRef(false)
 
   const points = useEditorStore((s) => s.points)
   const lines = useEditorStore((s) => s.lines)
@@ -207,12 +142,38 @@ export function EditorStage() {
     })
   }, [])
 
+  const gesture = useCanvasGesture({
+    tool,
+    selection,
+    marqueeTarget,
+    pendingLineStart,
+    points,
+    lines,
+    faces,
+    vp,
+    gridSpacing: gridSettings.spacing,
+    bgEditMode,
+    hudRef,
+    setVp,
+    actions: {
+      addPoint,
+      addLine,
+      selectSingle,
+      selectMany,
+      toggleSelect,
+      clearSelection,
+      setPendingLineStart,
+      translateSelectionBy,
+    },
+  })
+  const { drag, marquee, hover, spacePan } = gesture
+
   useKeyboardShortcuts({
     sizeRef,
-    dragStartRef: dragStart,
-    panningRef: panning,
+    dragStartRef: gesture.dragStartRef,
+    panningRef: gesture.panningRef,
     setVp,
-    setSpacePan,
+    setSpacePan: gesture.setSpacePan,
     actions: {
       deleteSelection,
       clearSelection,
@@ -254,216 +215,6 @@ export function EditorStage() {
       )
     : points
   const byId = new Map(renderPoints.map((p) => [p.id, p]))
-
-  const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
-    e.evt.preventDefault()
-    const p = e.target.getStage()?.getPointerPosition()
-    if (!p) return
-    const factor = e.evt.deltaY < 0 ? 1.1 : 1 / 1.1
-    setVp((v) => zoomAt(v, factor, p.x, p.y))
-  }
-
-  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    const stage = e.target.getStage()
-    const p = stage?.getPointerPosition()
-    if (!p) return
-    // Clear stale suppress flags from a gesture that ended off-stage (mouseleave
-    // fires no follow-up click to clear them), so this gesture's click isn't
-    // swallowed. Both a marquee and a move-drag can release off-stage.
-    justMarqueed.current = false
-    justDragged.current = false
-    justImageDragged.current = false
-    // In background-edit mode, let Konva's draggable image / Transformer own the
-    // gesture so the stage marquee and geometry move-drag stay out of the way.
-    if (bgEditMode && !spacePan && e.evt.button === 0 && isBackgroundTarget(e.target)) {
-      return
-    }
-    if (spacePan || tool === 'pan' || e.evt.button === 1) {
-      panning.current = { x: p.x, y: p.y }
-      return
-    }
-    if (tool === 'select' && e.evt.button === 0) {
-      // R2: a plain press on an already-selected item begins a move drag.
-      // Modifier presses stay reserved for marquee target switching below.
-      if (!e.evt.shiftKey && !e.evt.ctrlKey && !e.evt.metaKey) {
-        const node = e.target
-        const name = typeof node.name === 'function' ? node.name() : ''
-        const id = typeof node.id === 'function' ? node.id() : ''
-        if (isDraggableTarget(name, id, selection)) {
-          dragStart.current = { x: p.x, y: p.y, moved: false }
-          setDrag({ ids: collectSelectionPointIds(useEditorStore.getState()), dx: 0, dz: 0 })
-          return
-        }
-      }
-      const target = e.evt.shiftKey
-        ? 'line'
-        : e.evt.ctrlKey || e.evt.metaKey
-          ? 'face'
-          : marqueeTarget
-      marqueeStart.current = { x: p.x, y: p.y, target }
-      setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y })
-    }
-  }
-
-  const resolveTarget = (px: number, py: number, altKey: boolean) =>
-    snapPointTarget(points, lines, vp, px, py, gridSettings.spacing, HIT_PX, altKey)
-
-  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    const p = e.target.getStage()?.getPointerPosition()
-    if (!p) return
-    if (hudRef.current) {
-      const w = screenToWorld(vp, p.x, p.y)
-      hudRef.current.textContent = formatHud(w.x, w.z, vp.scale)
-    }
-    if (dragStart.current) {
-      const d = dragStart.current
-      // R1: ignore sub-threshold jitter so a plain click never nudges geometry.
-      if (!d.moved && !exceededDragThreshold(p.x - d.x, p.y - d.y)) return
-      d.moved = true
-      const w0 = screenToWorld(vp, d.x, d.y)
-      const w1 = screenToWorld(vp, p.x, p.y)
-      // R4: snap the delta to grid spacing; Alt frees it. No store mutation here.
-      const snapped = snapDelta(w1.x - w0.x, w1.z - w0.z, gridSettings.spacing, e.evt.altKey)
-      setDrag((cur) => (cur ? { ...cur, dx: snapped.dx, dz: snapped.dz } : cur))
-      return
-    }
-    if (panning.current) {
-      const dx = p.x - panning.current.x
-      const dy = p.y - panning.current.y
-      panning.current = { x: p.x, y: p.y }
-      setVp((v) => panBy(v, dx, dy))
-      return
-    }
-    if (spacePan) {
-      if (hover) setHover(null)
-      return
-    }
-    if (marqueeStart.current) {
-      setMarquee(normalizeRect(marqueeStart.current.x, marqueeStart.current.y, p.x, p.y))
-      return
-    }
-    if (tool === 'point' || tool === 'line') {
-      const tgt = resolveTarget(p.x, p.y, e.evt.altKey)
-      const s = worldToScreen(vp, tgt.x, tgt.z)
-      setHover({ sx: s.sx, sy: s.sy, x: tgt.x, z: tgt.z, existingId: tgt.existingId })
-    } else if (hover) {
-      setHover(null)
-    }
-  }
-
-  const finishMarquee = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    panning.current = null
-    // End a move drag first (mouseup or leaving the stage). Commit once -> a
-    // single undo entry; a sub-threshold press falls through to a normal click.
-    if (dragStart.current) {
-      const moved = dragStart.current.moved
-      if (moved && drag && (drag.dx !== 0 || drag.dz !== 0)) {
-        translateSelectionBy(drag.dx, drag.dz)
-      }
-      // Any threshold-crossing drag swallows the trailing click so the gesture
-      // never doubles as a selection change (even if it snapped back to zero).
-      if (moved) justDragged.current = true
-      dragStart.current = null
-      setDrag(null)
-      return
-    }
-    const ms = marqueeStart.current
-    if (!ms) return
-    const p = e.target.getStage()?.getPointerPosition() ?? { x: ms.x, y: ms.y }
-    const rect = normalizeRect(ms.x, ms.y, p.x, p.y)
-    const moved = Math.abs(p.x - ms.x) > 3 || Math.abs(p.y - ms.y) > 3
-    if (moved) {
-      if (ms.target === 'point') selectMany('point', pointsInRect(points, vp, rect))
-      else if (ms.target === 'line')
-        selectMany('line', linesInRect(points, lines, vp, rect))
-      else selectMany('face', facesInRect(faces, points, vp, rect))
-      justMarqueed.current = true
-    }
-    marqueeStart.current = null
-    setMarquee(null)
-  }
-
-  const resolveEndpointId = (
-    px: number,
-    py: number,
-    altKey: boolean,
-  ): { id: string; created: boolean } => {
-    const tgt = resolveTarget(px, py, altKey)
-    if (tgt.existingId) return { id: tgt.existingId, created: false }
-    return { id: addPoint(tgt.x, tgt.z), created: true }
-  }
-
-  const handleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (e.evt.button === 1) return
-    if (spacePan) return
-    if (justMarqueed.current) {
-      justMarqueed.current = false
-      return
-    }
-    // A move-drag ends with a click event; swallow it so the selection is kept.
-    if (justDragged.current) {
-      justDragged.current = false
-      return
-    }
-    // An image drag/resize also ends with a click; swallow it so the image stays selected.
-    if (justImageDragged.current) {
-      justImageDragged.current = false
-      return
-    }
-    // A plain click on the background image keeps it selected (never clears).
-    if (isBackgroundTarget(e.target)) return
-    const stage = e.target.getStage()
-    const p = stage?.getPointerPosition()
-    if (!p) return
-    const node = e.target
-    const name = typeof node.name === 'function' ? node.name() : ''
-    const id = typeof node.id === 'function' ? node.id() : ''
-
-    if (tool === 'select') {
-      const kind =
-        name === 'point'
-          ? 'point'
-          : name === 'line'
-            ? 'line'
-            : name === 'face'
-              ? 'face'
-              : null
-      const additive = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey
-      if (kind) {
-        if (additive) toggleSelect(kind, id)
-        else selectSingle(kind, id)
-      } else if (!additive) {
-        clearSelection()
-      }
-      return
-    }
-    if (tool === 'point') {
-      const tgt = resolveTarget(p.x, p.y, e.evt.altKey)
-      selectSingle('point', tgt.existingId ?? addPoint(tgt.x, tgt.z))
-      return
-    }
-    if (tool === 'line') {
-      const { id: endId, created } = resolveEndpointId(p.x, p.y, e.evt.altKey)
-      if (!pendingLineStart) {
-        setPendingLineStart(endId)
-      } else if (endId !== pendingLineStart) {
-        // Only advance the polyline chain when the new line was actually
-        // created. addLine returns null on a duplicate edge (or self-loop);
-        // in that case keep pendingLineStart so the hover preview stays at
-        // the original start, signalling that the click was a no-op.
-        const lineId = addLine(pendingLineStart, endId)
-        if (lineId) {
-          setPendingLineStart(endId)
-        } else if (!created) {
-          // Only warn on a true duplicate -- both endpoints pre-existed.
-          // If this click added a new point on an existing line, renode
-          // already split that line at the new point (legitimate noding),
-          // so the "already exists" notice would be misleading.
-          toast.warning('A line between these points already exists.')
-        }
-      }
-    }
-  }
 
   const gridLines = computeGridLines(vp, size.w, size.h, gridSettings.spacing)
   const gridLabels =
@@ -513,16 +264,7 @@ export function EditorStage() {
           width={size.w}
           height={size.h}
           style={{ cursor }}
-          onWheel={handleWheel}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={finishMarquee}
-          onMouseLeave={(e) => {
-            finishMarquee(e)
-            setHover(null)
-            if (hudRef.current) hudRef.current.textContent = HUD_EMPTY
-          }}
-          onClick={handleClick}
+          {...gesture.handlers}
         >
           {background && bgScreen && backgroundVisible && !bgEditMode && (
             <Layer listening={false}>
@@ -769,9 +511,7 @@ export function EditorStage() {
               gridSpacing={gridSettings.spacing}
               lockAspect={backgroundLockAspect}
               onChange={updateBackground}
-              onGestureEnd={() => {
-                justImageDragged.current = true
-              }}
+              onGestureEnd={gesture.markBackgroundGestureEnd}
             />
           )}
         </Stage>
